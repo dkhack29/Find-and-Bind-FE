@@ -1,0 +1,7 @@
+{
+  "name": "Remix: Travel Platform PRD Master",
+  "description": "Comprehensive PRD dashboard for the Travel Community \u0026 Trust Engine, featuring AI-powered technical specification generation and optimization tips.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
