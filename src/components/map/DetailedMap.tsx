@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { Plus, Minus, Landmark, Hotel, Utensils, Star, Heart, Navigation } from 'lucide-react';
+import { Plus, Minus, Landmark, Hotel, Utensils, Star, Heart, Navigation, LocateFixed } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 // Dynamic POI structure
@@ -242,27 +242,57 @@ export default function DetailedMap({
     if (mapRef.current) mapRef.current.zoomOut();
   };
 
+  const locateUser = () => {
+    if (mapRef.current) {
+      if (userCoords) {
+        // Zoom to actual user GPS location
+        mapRef.current.setView([userCoords.lat, userCoords.lon], 15, {
+          animate: true,
+          duration: 1
+        });
+      } else {
+        // Fallback: Zoom back to the province center if GPS not available
+        mapRef.current.setView([lat, lon], 13, {
+          animate: true,
+          duration: 1
+        });
+      }
+    }
+  };
+
   return (
     <div className="absolute inset-0 z-0 bg-slate-50 overflow-hidden">
       {/* Target Container for Leaflet Canvas */}
       <div ref={mapContainerRef} className="w-full h-full" />
 
       {/* Floating Controls Overlay */}
-      <div className="absolute right-6 bottom-28 z-20 flex flex-col gap-2 pointer-events-auto">
+      <div className="absolute right-4 bottom-40 z-[9999] flex flex-col gap-3 pointer-events-auto">
+        {/* Locate Me Button */}
         <button 
-          onClick={zoomIn}
-          className="w-10 h-10 bg-white/95 backdrop-blur-sm shadow-md rounded-full text-slate-700 flex items-center justify-center border border-slate-200/80 active:scale-90 transition-transform cursor-pointer hover:bg-slate-50"
-          aria-label="Phóng to"
+          onClick={locateUser}
+          className="w-12 h-12 bg-white shadow-2xl rounded-2xl text-slate-700 flex items-center justify-center border border-slate-100 active:scale-90 transition-all cursor-pointer hover:bg-slate-50"
+          aria-label="Vị trí của bạn"
         >
-          <Plus size={18} />
+          <LocateFixed size={24} className={userCoords ? "text-indigo-600" : "text-slate-500"} />
         </button>
-        <button 
-          onClick={zoomOut}
-          className="w-10 h-10 bg-white/95 backdrop-blur-sm shadow-md rounded-full text-slate-700 flex items-center justify-center border border-slate-200/80 active:scale-90 transition-transform cursor-pointer hover:bg-slate-50"
-          aria-label="Thu nhỏ"
-        >
-          <Minus size={18} />
-        </button>
+
+        {/* Zoom Group */}
+        <div className="flex flex-col bg-white shadow-2xl rounded-2xl border border-slate-100 overflow-hidden">
+          <button
+            onClick={zoomIn}
+            className="w-12 h-12 text-slate-700 flex items-center justify-center active:bg-slate-50 transition-colors cursor-pointer hover:bg-slate-50 border-b border-slate-100"
+            aria-label="Phóng to"
+          >
+            <Plus size={24} />
+          </button>
+          <button
+            onClick={zoomOut}
+            className="w-12 h-12 text-slate-700 flex items-center justify-center active:bg-slate-50 transition-colors cursor-pointer hover:bg-slate-50"
+            aria-label="Thu nhỏ"
+          >
+            <Minus size={24} />
+          </button>
+        </div>
       </div>
 
       {/* Mini Top Indicator overlay showing province name */}
