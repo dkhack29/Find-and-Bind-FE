@@ -59,6 +59,35 @@ export default function MapScreen() {
     }
   }, []);
 
+  // Hàm tính khoảng cách đơn giản giữa 2 tọa độ (đủ chính xác cho phạm vi Việt Nam)
+  const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const radlat1 = (Math.PI * lat1) / 180;
+    const radlat2 = (Math.PI * lat2) / 180;
+    const theta = lon1 - lon2;
+    const radtheta = (Math.PI * theta) / 180;
+    let dist = Math.sin(radlat1) * Math.sin(radlat2) + Math.cos(radlat1) * Math.cos(radlat2) * Math.cos(radtheta);
+    if (dist > 1) dist = 1;
+    dist = Math.acos(dist);
+    dist = (dist * 180) / Math.PI;
+    return dist * 60 * 1.1515 * 1.609344; // Trả về Kilometers
+  };
+
+  const findClosestProvince = (lat: number, lon: number, provinceList: ProvinceData[]): ProvinceData | null => {
+    if (!provinceList || provinceList.length === 0) return null;
+    
+    let closestProv = provinceList[0];
+    let minDistance = getDistance(lat, lon, provinceList[0].lat, provinceList[0].lon);
+
+    for (let i = 1; i < provinceList.length; i++) {
+      const dist = getDistance(lat, lon, provinceList[i].lat, provinceList[i].lon);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestProv = provinceList[i];
+      }
+    }
+    return closestProv;
+  };
+
   const requestGPS = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -69,6 +98,12 @@ export default function MapScreen() {
           localStorage.setItem('gps_consented', 'true');
           localStorage.setItem('gps_denied', 'false');
           setShowGpsModal(false);
+          setTimeout(() => {
+          const localProvince = findClosestProvince(lat, lon, provinces);
+          if (localProvince) {
+            handleProvinceSelect(localProvince);
+          }
+        }, 300);
         },
         (error) => {
           console.error("GPS Request failed: ", error);
