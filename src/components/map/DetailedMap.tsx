@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { Plus, Minus, Landmark, Hotel, Utensils, Star, Heart, Navigation, LocateFixed } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import placesData from '../../assets/places.json';
 
 // Dynamic POI structure
 export interface MapPlace {
@@ -40,11 +39,61 @@ export default function DetailedMap({
   const markersRef = useRef<L.LayerGroup | null>(null);
   const [selectedLocalPlace, setSelectedLocalPlace] = useState<MapPlace | null>(null);
 
-  // Dùng dữ liệu từ file JSON được geocode
-  // Lọc lấy các điểm gần tọa độ trung tâm của tỉnh đang chọn (trong vòng bán kính khoảng 50km = 0.5 độ lat/lon)
-  const places = (placesData as any[]).filter(place => {
-    return Math.abs(place.lat - lat) < 0.5 && Math.abs(place.lon - lon) < 0.5;
-  }) as MapPlace[];
+  // Generate realistic landmarks and POIs centered around the selected province's coordinates
+  const generatePlaces = (centerLat: number, centerLon: number): MapPlace[] => {
+    return [
+      {
+        id: `landmark-1-${provinceName}`,
+        name: `Kỳ quan Thiên nhiên ${provinceName}`,
+        category: 'landmark',
+        lat: centerLat + 0.015,
+        lon: centerLon - 0.02,
+        rating: 4.9,
+        reviews: 1420,
+        image: 'bg-gradient-nature',
+        description: 'Điểm tham quan ngắm cảnh tuyệt đẹp được xếp hạng quốc gia với vẻ đẹp hoang sơ kỳ vĩ.',
+        distance: '1.2 km',
+      },
+      {
+        id: `landmark-2-${provinceName}`,
+        name: `Di tích Cổ kính ${provinceName}`,
+        category: 'landmark',
+        lat: centerLat - 0.025,
+        lon: centerLon + 0.018,
+        rating: 4.7,
+        reviews: 580,
+        image: 'bg-gradient-mesh',
+        description: 'Ngôi chùa cổ kính ngàn năm tuổi lưu giữ nhiều bia ký, kiến trúc chạm khắc cổ xưa.',
+        distance: '2.5 km',
+      },
+      {
+        id: `hotel-1-${provinceName}`,
+        name: `${provinceName} Premium Resort & Spa`,
+        category: 'hotel',
+        lat: centerLat + 0.025,
+        lon: centerLon + 0.02,
+        rating: 4.8,
+        reviews: 890,
+        image: 'bg-gradient-urban',
+        description: 'Khu nghỉ dưỡng 5 sao tiêu chuẩn quốc tế mang lại trải nghiệm đỉnh cao giữa lòng thiên nhiên.',
+        distance: '3.1 km',
+      },
+      {
+        id: `restaurant-1-${provinceName}`,
+        name: `Nhà hàng Ẩm thực Đặc sản ${provinceName}`,
+        category: 'restaurant',
+        lat: centerLat - 0.01,
+        lon: centerLon - 0.015,
+        rating: 4.6,
+        reviews: 1205,
+        image: 'bg-gradient-nature',
+        description: 'Nơi thưởng thức tinh hoa ẩm thực truyền thống, chuẩn vị bản xứ do đầu bếp trứ danh chế biến.',
+        distance: '0.8 km',
+      }
+    ];
+  };
+
+  const places = generatePlaces(lat, lon);
 
   // Filtered Places list
   const filteredPlaces = places.filter(place => {
