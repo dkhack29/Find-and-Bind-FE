@@ -19,6 +19,8 @@ export default function MapScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ProvinceData[]>([]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResult, setSearchResult] = useState<{ lat: number; lon: number; label: string } | null>(null);
 
   // Location & Modal States
   const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
@@ -110,6 +112,87 @@ export default function MapScreen() {
     }
   };
 
+  // Helper to parse coordinates or Google Maps URLs
+  const parseCoordinates = (input: string): { lat: number; lon: number } | null => {
+    // Matches standard decimal format, e.g. "21.0285, 105.8542" or from a Google Maps URL, e.g. "@21.0285,105.8542"
+    const regex = /(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/;
+    const match = input.match(regex);
+    if (match) {
+      const lat = parseFloat(match[1]);
+      const lon = parseFloat(match[2]);
+      if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+        return { lat, lon };
+      }
+    }
+    return null;
+  };
+
+  // Helper to construct a dynamic ProvinceData for custom search results
+  const mockProvinceFromSearchResult = (lat: number, lon: number, label: string): ProvinceData => {
+    return {
+      id: `search-${lat}-${lon}`,
+      name: label.split(',')[0] || 'Địa điểm tìm thấy',
+      region: 'Kết quả tìm kiếm',
+      color: 'fill-indigo-100/70',
+      borderColor: 'stroke-indigo-400',
+      glowColor: 'shadow-indigo-500/10',
+      d: '',
+      lat,
+      lon,
+      centerX: 225,
+      centerY: 390,
+      description: label,
+      attractions: 0
+    };
+  };
+
+  // Navigates and centers map on specific searched coordinates
+  const goToLocation = (lat: number, lon: number, label: string) => {
+    const mockProv = mockProvinceFromSearchResult(lat, lon, label);
+    setSearchResult({ lat, lon, label });
+    setSelectedProvince(mockProv);
+    setActiveView('detailed');
+    setIsSearchFocused(false);
+  };
+
+  // Submit search: handles coordinates, Google Maps URL, or geocoding
+  const handleSearchSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!searchQuery.trim()) return;
+
+    // 1. Check if it matches coordinate pattern or Google Maps URL containing coordinates
+    const coords = parseCoordinates(searchQuery);
+    if (coords) {
+      goToLocation(coords.lat, coords.lon, `Tọa độ: ${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`);
+      return;
+    }
+
+    // 2. Otherwise run Nominatim OpenStreetMap lookup (free, CORS-safe, country codes restricted to Vietnam)
+    try {
+      setIsSearching(true);
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&countrycodes=vn&limit=5`,
+        {
+          headers: {
+            'User-Agent': 'FindAndBindMobileApp/1.0'
+          }
+        }
+      );
+      const data = await response.json();
+      if (data && data.length > 0) {
+        const first = data[0];
+        goToLocation(parseFloat(first.lat), parseFloat(first.lon), first.display_name);
+      } else {
+        alert("Không tìm thấy địa điểm này. Vui lòng thử lại!");
+      }
+    } catch (err) {
+      console.error("Geocoding lookup error:", err);
+      alert("Lỗi kết nối tìm kiếm địa điểm.");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   // Cinematic Zoom-In orchestration
   const handleProvinceSelect = (prov: ProvinceData) => {
     setSelectedProvince(prov);
@@ -141,6 +224,8 @@ export default function MapScreen() {
   // Cinematic Zoom-Out orchestration
   const handleBackToOverview = () => {
     setSelectedPlace(null);
+    setSearchResult(null);
+    setSearchQuery('');
     setActiveView('overview');
     setIsZooming(true);
 
@@ -180,13 +265,20 @@ export default function MapScreen() {
           )}
 
           <div className="flex-1 flex items-center gap-2 relative">
-            <Search size={18} className="text-slate-400" />
+            <button 
+              onClick={() => handleSearchSubmit()} 
+              className="text-slate-400 hover:text-indigo-600 cursor-pointer transition-colors active:scale-95 flex items-center justify-center animate-none"
+              aria-label="Submit search"
+            >
+              <Search size={18} />
+            </button>
             <input 
               type="text" 
               placeholder={activeView === 'detailed' ? `Tìm kiếm tại ${selectedProvince?.name}...` : "Tìm điểm đến trên bản đồ..."} 
               value={searchQuery}
               onChange={handleSearchChange}
               onFocus={() => setIsSearchFocused(true)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSearchSubmit(); }}
               className="flex-1 bg-transparent outline-none text-slate-800 text-xs font-semibold placeholder-slate-400" 
             />
             {searchQuery && (
@@ -203,31 +295,60 @@ export default function MapScreen() {
 
         {/* Search Suggestion Results list overlay */}
         <AnimatePresence>
-          {isSearchFocused && searchResults.length > 0 && (
+          {isSearchFocused && searchQuery.trim() !== '' && (
             <motion.div 
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="bg-white/95 border border-slate-200/80 rounded-3xl p-3 shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col gap-1"
+              className="bg-white/95 border border-slate-200/80 rounded-3xl p-3 shadow-xl max-h-68 overflow-y-auto custom-scrollbar flex flex-col gap-1.5 pointer-events-auto"
             >
-              {searchResults.map((prov) => (
-                <button
-                  key={prov.id}
-                  onClick={() => handleProvinceSelect(prov)}
-                  className="w-full px-4 py-3 rounded-2xl bg-white/0 hover:bg-slate-50 flex items-center justify-between text-left transition-colors cursor-pointer group"
-                >
-                  <div className="flex items-center gap-3">
-                    <MapPin size={14} className="text-indigo-600" />
-                    <div>
-                      <h5 className="text-xs font-bold text-slate-700 group-hover:text-slate-800 leading-tight">
-                        {prov.name}
-                      </h5>
-                      <span className="text-[10px] text-slate-400 font-semibold">{prov.region}</span>
-                    </div>
+              {/* Dynamic Geocoding Search Option */}
+              <button
+                onClick={() => handleSearchSubmit()}
+                className="w-full px-4 py-3 rounded-2xl bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-100/40 flex items-center justify-between text-left transition-all duration-200 cursor-pointer group shrink-0"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-xl bg-indigo-600/10 flex items-center justify-center text-indigo-600 shrink-0">
+                    {isSearching ? (
+                      <Compass size={14} className="text-indigo-600 animate-spin" />
+                    ) : (
+                      <Search size={14} className="text-indigo-600" />
+                    )}
                   </div>
-                  <ChevronRight size={14} className="text-slate-400 group-hover:text-slate-600 transition-colors" />
-                </button>
-              ))}
+                  <div>
+                    <h5 className="text-[11.5px] font-extrabold text-indigo-600 group-hover:text-indigo-700 leading-tight">
+                      {isSearching ? 'Đang tìm kiếm...' : `Tìm kiếm "${searchQuery}" trên bản đồ`}
+                    </h5>
+                    <span className="text-[9px] text-indigo-500/85 font-semibold">Tọa độ, URL Google Maps hoặc Địa điểm tự do</span>
+                  </div>
+                </div>
+                <ChevronRight size={14} className="text-indigo-400 group-hover:text-indigo-600 transition-colors" />
+              </button>
+
+              {/* Local static province suggestions */}
+              {searchResults.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <div className="h-px bg-slate-100 my-1 mx-2"></div>
+                  {searchResults.map((prov) => (
+                    <button
+                      key={prov.id}
+                      onClick={() => handleProvinceSelect(prov)}
+                      className="w-full px-4 py-3 rounded-2xl bg-white/0 hover:bg-slate-50 flex items-center justify-between text-left transition-colors cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <MapPin size={14} className="text-slate-400 group-hover:text-indigo-600 transition-colors" />
+                        <div>
+                          <h5 className="text-xs font-bold text-slate-700 group-hover:text-slate-800 leading-tight">
+                            {prov.name}
+                          </h5>
+                          <span className="text-[10px] text-slate-400 font-semibold">{prov.region}</span>
+                        </div>
+                      </div>
+                      <ChevronRight size={14} className="text-slate-400 group-hover:text-slate-600 transition-colors" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -326,6 +447,7 @@ export default function MapScreen() {
                 userCoords={userCoords}
                 onSelectPlace={setSelectedPlace}
                 activeFilter={activeFilter}
+                searchResult={searchResult}
               />
             </motion.div>
           )}
