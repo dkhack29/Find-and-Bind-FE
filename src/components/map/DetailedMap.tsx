@@ -24,6 +24,7 @@ interface DetailedMapProps {
   userCoords: { lat: number; lon: number } | null;
   onSelectPlace: (place: MapPlace | null) => void;
   activeFilter: string;
+  searchResult?: { lat: number; lon: number; label: string } | null;
 }
 
 export default function DetailedMap({ 
@@ -32,11 +33,13 @@ export default function DetailedMap({
   lon, 
   userCoords, 
   onSelectPlace,
-  activeFilter 
+  activeFilter,
+  searchResult
 }: DetailedMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<L.LayerGroup | null>(null);
+  const searchMarkerRef = useRef<L.Marker | null>(null);
   const [selectedLocalPlace, setSelectedLocalPlace] = useState<MapPlace | null>(null);
 
   // Generate realistic landmarks and POIs centered around the selected province's coordinates
@@ -172,6 +175,52 @@ export default function DetailedMap({
       }
     };
   }, [lat, lon, userCoords]);
+
+  // Update or fly to search result marker
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Remove existing search marker
+    if (searchMarkerRef.current) {
+      searchMarkerRef.current.remove();
+      searchMarkerRef.current = null;
+    }
+
+    if (searchResult) {
+      const searchResultHtml = `
+        <div class="relative w-10 h-10 flex items-center justify-center animate-bounce">
+          <div class="absolute -bottom-1 w-3 h-3 bg-red-600/30 blur-[2px] rounded-full scale-[1.5]"></div>
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="#ef4444" stroke="#ffffff" stroke-width="2" class="text-red-500 drop-shadow-[0_2px_6px_rgba(239,68,68,0.4)] animate-pulse">
+            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+            <circle cx="12" cy="10" r="3" fill="#ffffff"/>
+          </svg>
+        </div>
+      `;
+      const searchResultIcon = L.divIcon({
+        html: searchResultHtml,
+        className: 'custom-search-result-leaflet-marker',
+        iconSize: [40, 40],
+        iconAnchor: [20, 36]
+      });
+
+      const newSearchMarker = L.marker([searchResult.lat, searchResult.lon], { icon: searchResultIcon })
+        .bindPopup(`<div class="p-2 font-display font-semibold text-xs text-slate-800 leading-snug">${searchResult.label}</div>`, {
+          closeButton: false,
+          className: 'custom-leaflet-popup shadow-xl rounded-2xl border-0 overflow-hidden'
+        })
+        .addTo(map);
+
+      newSearchMarker.openPopup();
+      searchMarkerRef.current = newSearchMarker;
+
+      // Fly to the new coordinate smoothly (Google Maps zoom transition)
+      map.flyTo([searchResult.lat, searchResult.lon], 15, {
+        animate: true,
+        duration: 1.8
+      });
+    }
+  }, [searchResult]);
 
   // Update Markers when filtered list changes
   useEffect(() => {
