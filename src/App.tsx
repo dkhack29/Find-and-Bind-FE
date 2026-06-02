@@ -21,9 +21,10 @@ export function cn(...inputs: ClassValue[]) {
 
 function MainLayout() {
   const location = useLocation();
-  // Hide bottom nav on detail screens
   const hideNavRoutes = ['/place/', '/plan/new', '/plan/detail/'];
-  const shouldHideNav = hideNavRoutes.some(path => location.pathname.includes(path));
+  const shouldHideNav = 
+    hideNavRoutes.some(path => location.pathname.includes(path)) ||
+    (location.pathname === '/map' && location.search.includes('routing=true'));
   
   return (
     <div className="h-screen w-full bg-slate-200 flex justify-center relative overflow-hidden font-sans">

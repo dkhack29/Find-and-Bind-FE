@@ -1,16 +1,133 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, SlidersHorizontal, ArrowLeft, Compass, MapPin, 
-  Star, X, Landmark, Hotel, Utensils, ChevronRight, Navigation, Heart 
+  Star, X, Landmark, Hotel, Utensils, ChevronRight, Navigation, Heart,
+  ArrowUp, ArrowUpLeft, ArrowUpRight, RefreshCw, ChevronUp, ChevronDown, ArrowRight
 } from 'lucide-react';
 import VietnamSvgMap, { provinces, ProvinceData } from '../components/map/VietnamSvgMap';
 import DetailedMap, { MapPlace } from '../components/map/DetailedMap';
 import GpsPermissionModal from '../components/map/GpsPermissionModal';
+import { Geolocation } from '@capacitor/geolocation';
+
+// Helper function to map OSRM step maneuvers to Lucide Icons
+const getStepIcon = (step: any) => {
+  if (!step || !step.maneuver) return <ArrowUp size={11} />;
+  
+  const type = step.maneuver.type;
+  const modifier = step.maneuver.modifier || "";
+
+  if (type === 'arrive') return <MapPin size={11} className="fill-current text-white" />;
+  if (type === 'depart') return <Compass size={11} />;
+  if (type === 'u-turn') return <RefreshCw size={11} />;
+  if (type === 'roundabout' || type === 'rotary') return <RefreshCw size={11} />;
+
+  if (modifier.includes('left')) {
+    if (modifier.includes('slight')) return <ArrowUpLeft size={12} />;
+    return <ArrowLeft size={12} />;
+  }
+  if (modifier.includes('right')) {
+    if (modifier.includes('slight')) return <ArrowUpRight size={12} />;
+    return <ArrowRight size={12} />;
+  }
+
+  return <ArrowUp size={11} />;
+};
+
+// Helper function to construct Vietnamese navigation descriptions from OSRM steps
+const getStepInstruction = (step: any) => {
+  if (!step || !step.maneuver) return { title: "Đi thẳng", sub: "" };
+  
+  const type = step.maneuver.type;
+  const modifier = step.maneuver.modifier || "";
+  const name = step.name || "";
+  const distance = step.distance; // in meters
+  const duration = step.duration; // in seconds
+
+  let action = "Đi thẳng";
+  switch (type) {
+    case 'depart':
+      action = "Bắt đầu khởi hành";
+      break;
+    case 'arrive':
+      action = "Đến điểm đích";
+      break;
+    case 'u-turn':
+      action = "Quay đầu xe";
+      break;
+    case 'merge':
+      action = "Nhập làn giao thông";
+      break;
+    case 'ramp':
+      action = "Rẽ vào đường tránh/đường nhánh";
+      break;
+    case 'roundabout':
+    case 'rotary':
+      action = "Đi vào vòng xuyến";
+      break;
+    case 'turn':
+    case 'new name':
+      if (modifier.includes('left')) {
+        action = modifier.includes('slight') ? "Rẽ chếch sang bên trái" : modifier.includes('sharp') ? "Rẽ ngoặt sang bên trái" : "Rẽ trái";
+      } else if (modifier.includes('right')) {
+        action = modifier.includes('slight') ? "Rẽ chếch sang bên phải" : modifier.includes('sharp') ? "Rẽ ngoặt sang bên phải" : "Rẽ phải";
+      } else {
+        action = "Tiếp tục đi thẳng";
+      }
+      break;
+    default:
+      if (modifier.includes('left')) {
+        action = "Rẽ trái";
+      } else if (modifier.includes('right')) {
+        action = "Rẽ phải";
+      } else {
+        action = "Tiếp tục đi thẳng";
+      }
+  }
+
+  let title = action;
+  if (name) {
+    title += ` vào đường ${name}`;
+  } else if (type === 'arrive') {
+    title = "Bạn đã đến điểm đích";
+  }
+
+  const distText = distance >= 1000 
+    ? `${(distance / 1000).toFixed(1)} km` 
+    : `${Math.round(distance)} m`;
+
+  const timeText = duration >= 60
+    ? `${Math.round(duration / 60)} phút`
+    : `${Math.round(duration)} giây`;
+
+  let sub = "";
+  if (type !== 'arrive') {
+    sub = `Di chuyển tiếp ${distText} (${timeText})`;
+  }
+
+  return { title, sub };
+};
 
 export default function MapScreen() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isRoutingActive = searchParams.get('routing') === 'true';
+
+  // Routing Details state
+  const [routeDetails, setRouteDetails] = useState<{ distance: string; duration: string; steps: any[] } | null>(null);
+  const [isDirectionsExpanded, setIsDirectionsExpanded] = useState(false);
+
+  const setIsRoutingActive = (active: boolean) => {
+    if (active) {
+      setSearchParams({ routing: 'true' });
+    } else {
+      setSearchParams({});
+      setRouteDetails(null);
+      setIsDirectionsExpanded(false);
+    }
+  };
+
   // Navigation & View States
-  const [activeView, setActiveView] = useState<'overview' | 'detailed'>('overview');
   const [selectedProvince, setSelectedProvince] = useState<ProvinceData | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<MapPlace | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
@@ -25,10 +142,6 @@ export default function MapScreen() {
   // Location & Modal States
   const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [showGpsModal, setShowGpsModal] = useState(false);
-
-  // Cinematic Zoom States
-  const [isZooming, setIsZooming] = useState(false);
-  const [zoomTransform, setZoomTransform] = useState({ scale: 1, x: 0, y: 0 });
 
   // Detailed Map Filter States
   const [activeFilter, setActiveFilter] = useState<string>('all'); // all, landmark, hotel, restaurant
@@ -90,37 +203,65 @@ export default function MapScreen() {
     return closestProv;
   };
 
-  const requestGPS = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const lat = pos.coords.latitude;
-          const lon = pos.coords.longitude;
-          setUserCoords({ lat, lon });
-          localStorage.setItem('gps_consented', 'true');
-          localStorage.setItem('gps_denied', 'false');
-          setShowGpsModal(false);
-          setTimeout(() => {
-          const localProvince = findClosestProvince(lat, lon, provinces);
-          if (localProvince) {
-            handleProvinceSelect(localProvince);
-          }
-        }, 300);
-        },
-        (error) => {
-          console.error("GPS Request failed: ", error);
-          // Fallback coordinate on permission error: Thanh Hoa
-          setUserCoords({ lat: 19.8076, lon: 105.7765 });
-          localStorage.setItem('gps_consented', 'false');
-          localStorage.setItem('gps_denied', 'true');
-          setShowGpsModal(false);
-        },
-        { enableHighAccuracy: true, timeout: 5000 }
-      );
-    } else {
-      // Geolocation unsupported fallback: Thanh Hoa
-      setUserCoords({ lat: 19.8076, lon: 105.7765 });
+  const requestGPS = async () => {
+    try {
+      // 1. Try Capacitor Geolocation first for native-level high-accuracy GPS
+      const hasPermission = await Geolocation.checkPermissions();
+      if (hasPermission.location !== 'granted') {
+        await Geolocation.requestPermissions();
+      }
+      
+      const pos = await Geolocation.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 5000
+      });
+      
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+      setUserCoords({ lat, lon });
+      localStorage.setItem('gps_consented', 'true');
+      localStorage.setItem('gps_denied', 'false');
       setShowGpsModal(false);
+      setTimeout(() => {
+        const localProvince = findClosestProvince(lat, lon, provinces);
+        if (localProvince) {
+          handleProvinceSelect(localProvince);
+        }
+      }, 300);
+    } catch (err) {
+      console.warn("Capacitor Geolocation not available or failed, falling back to browser geolocation:", err);
+      // 2. Web browser Geolocation fallback
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const lat = pos.coords.latitude;
+            const lon = pos.coords.longitude;
+            setUserCoords({ lat, lon });
+            localStorage.setItem('gps_consented', 'true');
+            localStorage.setItem('gps_denied', 'false');
+            setShowGpsModal(false);
+            setTimeout(() => {
+              const localProvince = findClosestProvince(lat, lon, provinces);
+              if (localProvince) {
+                handleProvinceSelect(localProvince);
+              }
+            }, 300);
+          },
+          (error) => {
+            console.error("Browser GPS Request failed: ", error);
+            // Fallback coordinate on permission error: Thanh Hoa
+            setUserCoords({ lat: 19.8076, lon: 105.7765 });
+            localStorage.setItem('gps_consented', 'false');
+            localStorage.setItem('gps_denied', 'true');
+            setShowGpsModal(false);
+          },
+          { enableHighAccuracy: true, timeout: 5000 }
+        );
+      } else {
+        // Geolocation unsupported fallback: Thanh Hoa
+        setUserCoords({ lat: 19.8076, lon: 105.7765 });
+        setShowGpsModal(false);
+      }
     }
   };
 
@@ -186,7 +327,6 @@ export default function MapScreen() {
     const mockProv = mockProvinceFromSearchResult(lat, lon, label);
     setSearchResult({ lat, lon, label });
     setSelectedProvince(mockProv);
-    setActiveView('detailed');
     setIsSearchFocused(false);
   };
 
@@ -228,51 +368,22 @@ export default function MapScreen() {
     }
   };
 
-  // Cinematic Zoom-In orchestration
+  // Select a province: smooth fly-to transition handled in DetailedMap
   const handleProvinceSelect = (prov: ProvinceData) => {
     setSelectedProvince(prov);
-    setIsZooming(true);
     setSearchQuery('');
     setSearchResults([]);
     setIsSearchFocused(false);
-
-    // Calculate transformation values to center the selected province centroid inside 450x780 viewport
-    // Center point of SVG viewBox is: CX: 225, CY: 390
-    const targetScale = 4.2;
-    const tx = (225 - prov.centerX) * targetScale;
-    const ty = (390 - prov.centerY) * targetScale;
-
-    setZoomTransform({
-      scale: targetScale,
-      x: tx,
-      y: ty
-    });
-
-    // Triggers transition from overview vector SVG to Leaflet detailed map
-    // Exactly when the zoom transform reaches peak scale (approx 900ms)
-    setTimeout(() => {
-      setActiveView('detailed');
-      setIsZooming(false);
-    }, 950);
   };
 
-  // Cinematic Zoom-Out orchestration
+  // Return back to full nationwide overview
   const handleBackToOverview = () => {
     setSelectedPlace(null);
     setSearchResult(null);
     setSearchQuery('');
-    setActiveView('overview');
-    setIsZooming(true);
-
-    // Scale back SVG maps
-    setZoomTransform({ scale: 1, x: 0, y: 0 });
-
-    // Smoothly restore default states
-    setTimeout(() => {
-      setIsZooming(false);
-      setSelectedProvince(null);
-      setActiveFilter('all');
-    }, 950);
+    setSelectedProvince(null);
+    setActiveFilter('all');
+    setSelectedRegion(null);
   };
 
   return (
@@ -283,216 +394,225 @@ export default function MapScreen() {
       className="h-full relative bg-slate-50 overflow-hidden flex flex-col text-slate-800"
     >
       {/* 1. Header Navigation Glass Card */}
-      <div className="absolute top-12 left-6 right-6 z-30 flex flex-col gap-3">
-        <div className="bg-white/85 backdrop-blur-[20px] border border-white/60 h-14 rounded-full shadow-lg flex items-center px-4 gap-3">
-          {activeView === 'detailed' ? (
-            <button 
-              onClick={handleBackToOverview}
-              className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200/80 flex items-center justify-center text-slate-600 hover:bg-slate-200 hover:text-slate-800 active:scale-95 transition-transform cursor-pointer"
-              aria-label="Back to overview"
-            >
-              <ArrowLeft size={16} />
-            </button>
-          ) : (
-            <div className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
-              <Compass size={18} className="animate-spin" style={{ animationDuration: '8s' }} />
-            </div>
-          )}
-
-          <div className="flex-1 flex items-center gap-2 relative">
-            <button 
-              onClick={() => handleSearchSubmit()} 
-              className="text-slate-400 hover:text-indigo-600 cursor-pointer transition-colors active:scale-95 flex items-center justify-center animate-none"
-              aria-label="Submit search"
-            >
-              <Search size={18} />
-            </button>
-            <input 
-              type="text" 
-              placeholder={activeView === 'detailed' ? `Tìm kiếm tại ${selectedProvince?.name}...` : "Tìm điểm đến trên bản đồ..."} 
-              value={searchQuery}
-              onChange={handleSearchChange}
-              onFocus={() => setIsSearchFocused(true)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleSearchSubmit(); }}
-              className="flex-1 bg-transparent outline-none text-slate-800 text-xs font-semibold placeholder-slate-400" 
-            />
-            {searchQuery && (
-              <button onClick={() => { setSearchQuery(''); setSearchResults([]); }} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                <X size={14} />
+      {!isRoutingActive && (
+        <div className="absolute top-12 left-6 right-6 z-30 flex flex-col gap-3">
+          <div className="bg-white/85 backdrop-blur-[20px] border border-white/60 h-14 rounded-full shadow-lg flex items-center px-4 gap-3">
+            {selectedProvince ? (
+              <button 
+                onClick={handleBackToOverview}
+                className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200/80 flex items-center justify-center text-slate-600 hover:bg-slate-200 hover:text-slate-800 active:scale-95 transition-transform cursor-pointer"
+                aria-label="Back to overview"
+              >
+                <ArrowLeft size={16} />
               </button>
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+                <Compass size={18} className="animate-spin" style={{ animationDuration: '8s' }} />
+              </div>
+            )}
+
+            <div className="flex-1 flex items-center gap-2 relative">
+              <button 
+                onClick={() => handleSearchSubmit()} 
+                className="text-slate-400 hover:text-indigo-600 cursor-pointer transition-colors active:scale-95 flex items-center justify-center animate-none"
+                aria-label="Submit search"
+              >
+                <Search size={18} />
+              </button>
+              <input 
+                type="text" 
+                placeholder={selectedProvince ? `Tìm kiếm tại ${selectedProvince?.name}...` : "Tìm điểm đến tại Việt Nam..."} 
+                value={searchQuery}
+                onChange={handleSearchChange}
+                onFocus={() => setIsSearchFocused(true)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSearchSubmit(); }}
+                className="flex-1 bg-transparent outline-none text-slate-800 text-xs font-semibold placeholder-slate-400" 
+              />
+              {searchQuery && (
+                <button onClick={() => { setSearchQuery(''); setSearchResults([]); }} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            
+            <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200/80 flex items-center justify-center text-slate-500 hover:bg-slate-200 cursor-pointer">
+              <SlidersHorizontal size={14} />
+            </div>
+          </div>
+
+          {/* Search Suggestion Results list overlay */}
+          <AnimatePresence>
+            {isSearchFocused && searchQuery.trim() !== '' && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="bg-white/95 border border-slate-200/80 rounded-3xl p-3 shadow-xl max-h-68 overflow-y-auto custom-scrollbar flex flex-col gap-1.5 pointer-events-auto"
+              >
+                {/* Dynamic Geocoding Search Option */}
+                <button
+                  onClick={() => handleSearchSubmit()}
+                  className="w-full px-4 py-3 rounded-2xl bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-100/40 flex items-center justify-between text-left transition-all duration-200 cursor-pointer group shrink-0"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-7 h-7 rounded-xl bg-indigo-600/10 flex items-center justify-center text-indigo-600 shrink-0">
+                      {isSearching ? (
+                        <Compass size={14} className="text-indigo-600 animate-spin" style={{ animationDuration: '1.5s' }} />
+                      ) : (
+                        <Search size={14} className="text-indigo-600" />
+                      )}
+                    </div>
+                    <div>
+                      <h5 className="text-[11.5px] font-extrabold text-indigo-600 group-hover:text-indigo-700 leading-tight">
+                        {isSearching ? 'Đang tìm kiếm...' : `Tìm kiếm "${searchQuery}" trên bản đồ`}
+                      </h5>
+                      <span className="text-[9px] text-indigo-500/85 font-semibold">Tọa độ, URL Google Maps hoặc Địa điểm tự do</span>
+                    </div>
+                  </div>
+                  <ChevronRight size={14} className="text-indigo-400 group-hover:text-indigo-600 transition-colors" />
+                </button>
+
+                {/* Local static province suggestions */}
+                {searchResults.length > 0 && (
+                  <div className="flex flex-col gap-1">
+                    <div className="h-px bg-slate-100 my-1 mx-2"></div>
+                    {searchResults.map((prov) => (
+                      <button
+                        key={prov.id}
+                        onClick={() => handleProvinceSelect(prov)}
+                        className="w-full px-4 py-3 rounded-2xl bg-white/0 hover:bg-slate-50 flex items-center justify-between text-left transition-colors cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <MapPin size={14} className="text-slate-400 group-hover:text-indigo-600 transition-colors" />
+                          <div>
+                            <h5 className="text-xs font-bold text-slate-700 group-hover:text-slate-800 leading-tight">
+                              {prov.name}
+                            </h5>
+                            <span className="text-[10px] text-slate-400 font-semibold">{prov.region}</span>
+                          </div>
+                        </div>
+                        <ChevronRight size={14} className="text-slate-400 group-hover:text-slate-600 transition-colors" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Horizontal Category Filters */}
+          <div className="flex gap-2 overflow-x-auto no-scrollbar pointer-events-auto pb-1.5 scroll-smooth">
+            {!selectedProvince ? (
+              // Overview S-shaped map Filters
+              regions.map((reg) => (
+                <button 
+                  key={reg.key} 
+                  onClick={() => setSelectedRegion(reg.key === 'all' ? null : reg.key)}
+                  className={`
+                    px-4 py-2 rounded-full text-[10px] font-extrabold whitespace-nowrap tracking-wide uppercase transition-all duration-300 active:scale-95 cursor-pointer
+                    ${(selectedRegion === reg.key || (reg.key === 'all' && selectedRegion === null))
+                      ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-600/15 border border-indigo-500/20' 
+                      : 'bg-white/80 backdrop-blur-sm text-slate-500 border border-slate-200/80 shadow-sm hover:text-slate-700 hover:bg-slate-100/80'
+                    }
+                  `}
+                >
+                  {reg.label}
+                </button>
+              ))
+            ) : (
+              // Detailed Leaflet map Filters
+              [
+                { key: 'all', label: 'Tất cả', icon: <Compass size={11} /> },
+                { key: 'landmark', label: 'Cảnh đẹp', icon: <Landmark size={11} /> },
+                { key: 'hotel', label: 'Khách sạn', icon: <Hotel size={11} /> },
+                { key: 'restaurant', label: 'Ẩm thực', icon: <Utensils size={11} /> },
+              ].map((filt) => (
+                <button 
+                  key={filt.key} 
+                  onClick={() => { setActiveFilter(filt.key); setSelectedPlace(null); }}
+                  className={`
+                    px-4 py-2 rounded-full text-[10px] font-extrabold whitespace-nowrap tracking-wide uppercase transition-all duration-300 active:scale-95 cursor-pointer flex items-center gap-1.5
+                    ${activeFilter === filt.key
+                      ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-600/15 border border-indigo-500/20' 
+                      : 'bg-white/80 backdrop-blur-sm text-slate-500 border border-slate-200/80 shadow-sm hover:text-slate-700 hover:bg-slate-100/80'
+                    }
+                  `}
+                >
+                  {filt.icon}
+                  {filt.label}
+                </button>
+              ))
             )}
           </div>
-          
-          <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200/80 flex items-center justify-center text-slate-500 hover:bg-slate-200 cursor-pointer">
-            <SlidersHorizontal size={14} />
-          </div>
         </div>
+      )}
 
-        {/* Search Suggestion Results list overlay */}
-        <AnimatePresence>
-          {isSearchFocused && searchQuery.trim() !== '' && (
-            <motion.div 
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="bg-white/95 border border-slate-200/80 rounded-3xl p-3 shadow-xl max-h-68 overflow-y-auto custom-scrollbar flex flex-col gap-1.5 pointer-events-auto"
-            >
-              {/* Dynamic Geocoding Search Option */}
-              <button
-                onClick={() => handleSearchSubmit()}
-                className="w-full px-4 py-3 rounded-2xl bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-100/40 flex items-center justify-between text-left transition-all duration-200 cursor-pointer group shrink-0"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-xl bg-indigo-600/10 flex items-center justify-center text-indigo-600 shrink-0">
-                    {isSearching ? (
-                      <Compass size={14} className="text-indigo-600 animate-spin" />
-                    ) : (
-                      <Search size={14} className="text-indigo-600" />
-                    )}
-                  </div>
-                  <div>
-                    <h5 className="text-[11.5px] font-extrabold text-indigo-600 group-hover:text-indigo-700 leading-tight">
-                      {isSearching ? 'Đang tìm kiếm...' : `Tìm kiếm "${searchQuery}" trên bản đồ`}
-                    </h5>
-                    <span className="text-[9px] text-indigo-500/85 font-semibold">Tọa độ, URL Google Maps hoặc Địa điểm tự do</span>
-                  </div>
-                </div>
-                <ChevronRight size={14} className="text-indigo-400 group-hover:text-indigo-600 transition-colors" />
-              </button>
-
-              {/* Local static province suggestions */}
-              {searchResults.length > 0 && (
-                <div className="flex flex-col gap-1">
-                  <div className="h-px bg-slate-100 my-1 mx-2"></div>
-                  {searchResults.map((prov) => (
-                    <button
-                      key={prov.id}
-                      onClick={() => handleProvinceSelect(prov)}
-                      className="w-full px-4 py-3 rounded-2xl bg-white/0 hover:bg-slate-50 flex items-center justify-between text-left transition-colors cursor-pointer group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <MapPin size={14} className="text-slate-400 group-hover:text-indigo-600 transition-colors" />
-                        <div>
-                          <h5 className="text-xs font-bold text-slate-700 group-hover:text-slate-800 leading-tight">
-                            {prov.name}
-                          </h5>
-                          <span className="text-[10px] text-slate-400 font-semibold">{prov.region}</span>
-                        </div>
-                      </div>
-                      <ChevronRight size={14} className="text-slate-400 group-hover:text-slate-600 transition-colors" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Horizontal Category Filters */}
-        <div className="flex gap-2 overflow-x-auto no-scrollbar pointer-events-auto pb-1.5 scroll-smooth">
-          {activeView === 'overview' ? (
-            // Overview S-shaped map Filters
-            regions.map((reg) => (
-              <button 
-                key={reg.key} 
-                onClick={() => setSelectedRegion(reg.key === 'all' ? null : reg.key)}
-                className={`
-                  px-4 py-2 rounded-full text-[10px] font-extrabold whitespace-nowrap tracking-wide uppercase transition-all duration-300 active:scale-95 cursor-pointer
-                  ${(selectedRegion === reg.key || (reg.key === 'all' && selectedRegion === null))
-                    ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-600/15 border border-indigo-500/20' 
-                    : 'bg-white/80 backdrop-blur-sm text-slate-500 border border-slate-200/80 shadow-sm hover:text-slate-700 hover:bg-slate-100/80'
-                  }
-                `}
-              >
-                {reg.label}
-              </button>
-            ))
-          ) : (
-            // Detailed Leaflet map Filters
-            [
-              { key: 'all', label: 'Tất cả', icon: <Compass size={11} /> },
-              { key: 'landmark', label: 'Cảnh đẹp', icon: <Landmark size={11} /> },
-              { key: 'hotel', label: 'Khách sạn', icon: <Hotel size={11} /> },
-              { key: 'restaurant', label: 'Ẩm thực', icon: <Utensils size={11} /> },
-            ].map((filt) => (
-              <button 
-                key={filt.key} 
-                onClick={() => { setActiveFilter(filt.key); setSelectedPlace(null); }}
-                className={`
-                  px-4 py-2 rounded-full text-[10px] font-extrabold whitespace-nowrap tracking-wide uppercase transition-all duration-300 active:scale-95 cursor-pointer flex items-center gap-1.5
-                  ${activeFilter === filt.key
-                    ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-600/15 border border-indigo-500/20' 
-                    : 'bg-white/80 backdrop-blur-sm text-slate-500 border border-slate-200/80 shadow-sm hover:text-slate-700 hover:bg-slate-100/80'
-                  }
-                `}
-              >
-                {filt.icon}
-                {filt.label}
-              </button>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* 2. Map Render Canvas Area */}
-      <div className="flex-1 w-full relative">
-        {/* S-shaped Stylized Vietnam SVG Canvas */}
-        <motion.div
-          initial={{ opacity: 1 }}
-          animate={{ 
-            opacity: activeView === 'overview' ? 1 : 0,
-            scale: zoomTransform.scale,
-            x: zoomTransform.x,
-            y: zoomTransform.y,
-            pointerEvents: activeView === 'overview' ? 'auto' : 'none',
-          }}
-          transition={{ 
-            type: "spring", 
-            stiffness: 75,
-            damping: 18,
-            mass: 1.1,
-          }}
-          className={`absolute inset-0 z-10 origin-center flex items-center justify-center pt-24 pb-8 ${
-            activeView === 'overview' || isZooming ? 'block' : 'hidden'
-          }`}
+      {/* OSRM Detailed Routing Top Panel (Image 3 UI) */}
+      {isRoutingActive && selectedPlace && (
+        <motion.div 
+          initial={{ y: -50, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="absolute top-12 left-6 right-6 z-30 pointer-events-auto bg-white/95 backdrop-blur-[20px] shadow-xl rounded-[28px] border border-white/60 p-4 flex gap-3.5 items-center select-none"
         >
-          <div className="w-[370px] h-full flex items-center justify-center">
-            <VietnamSvgMap 
-              onProvinceSelect={handleProvinceSelect} 
-              selectedRegion={selectedRegion}
-              userCoords={userCoords}
-            />
+          {/* Back Arrow button to exit routing mode */}
+          <button 
+            onClick={() => setIsRoutingActive(false)}
+            className="w-10 h-10 rounded-full bg-slate-50 border border-slate-200/80 flex items-center justify-center text-slate-600 hover:bg-slate-100 hover:text-slate-800 active:scale-95 transition-transform cursor-pointer shrink-0"
+            aria-label="Thoát dẫn đường"
+          >
+            <ArrowLeft size={16} />
+          </button>
+
+          {/* Dots Line & Markers Indicator */}
+          <div className="flex flex-col items-center justify-between h-[56px] w-3 relative shrink-0">
+            {/* White circle with blue border for user's starting point */}
+            <div className="w-3 h-3 rounded-full border-2 border-indigo-600 bg-white"></div>
+            {/* Dashed vertical connector line */}
+            <div className="w-0.5 h-6 border-l border-dashed border-slate-300"></div>
+            {/* Red dot for destination */}
+            <div className="w-3 h-3 rounded-full bg-rose-500"></div>
+          </div>
+
+          {/* Start and End Inputs */}
+          <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+            <div className="bg-slate-50 border border-slate-200/50 rounded-xl px-3 py-1.5 flex items-center">
+              <span className="font-display text-[9px] font-black text-slate-400 uppercase tracking-wide mr-2 shrink-0">Từ:</span>
+              <span className="font-display text-[10.5px] font-extrabold text-slate-700 truncate">
+                Vị trí của bạn
+              </span>
+            </div>
+            <div className="bg-slate-50 border border-slate-200/50 rounded-xl px-3 py-1.5 flex items-center">
+              <span className="font-display text-[9px] font-black text-slate-400 uppercase tracking-wide mr-2 shrink-0">Đến:</span>
+              <span className="font-display text-[10.5px] font-extrabold text-indigo-600 truncate">
+                {selectedPlace.name}
+              </span>
+            </div>
           </div>
         </motion.div>
+      )}
 
-        {/* Detailed Map (Leaflet) Crossfade Canvas */}
-        <AnimatePresence>
-          {activeView === 'detailed' && selectedProvince && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.6, ease: "easeInOut" }}
-              className="absolute inset-0 z-20 pointer-events-auto"
-            >
-              <DetailedMap 
-                provinceName={selectedProvince.name}
-                lat={selectedProvince.lat}
-                lon={selectedProvince.lon}
-                userCoords={userCoords}
-                onSelectPlace={setSelectedPlace}
-                activeFilter={activeFilter}
-                searchResult={searchResult}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
+      {/* 2. Map Render Canvas Area */}
+      <div className="flex-1 w-full relative z-10">
+        <div className="absolute inset-0 pointer-events-auto">
+          <DetailedMap 
+            selectedProvince={selectedProvince}
+            userCoords={userCoords}
+            onSelectPlace={setSelectedPlace}
+            activeFilter={activeFilter}
+            searchResult={searchResult}
+            selectedPlace={selectedPlace}
+            isRoutingActive={isRoutingActive}
+            onSelectProvince={handleProvinceSelect}
+            selectedRegion={selectedRegion}
+            onRouteCalculate={setRouteDetails}
+          />
+        </div>
       </div>
 
       {/* 3. Bottom Drawer details card */}
       <div className="absolute bottom-28 left-6 right-6 z-20 pointer-events-none">
         <AnimatePresence>
-          {selectedPlace ? (
+          {selectedPlace && !isRoutingActive ? (
             // Case A: A detailed place (POI) marker is clicked
             <motion.div
               initial={{ y: 150, opacity: 0 }}
@@ -545,13 +665,110 @@ export default function MapScreen() {
                 {selectedPlace.description}
               </p>
               <div className="flex gap-2">
-                <button className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-display text-xs font-bold rounded-2xl shadow-lg shadow-indigo-600/15 transition-all cursor-pointer">
+                <button 
+                  onClick={async () => {
+                    if (!userCoords) {
+                      await requestGPS();
+                    }
+                    setIsRoutingActive(true);
+                  }}
+                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-display text-xs font-bold rounded-2xl shadow-lg shadow-indigo-600/15 transition-all cursor-pointer"
+                >
                   Chỉ đường chi tiết
                 </button>
                 <button className="px-4 bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-rose-500 hover:text-rose-600 rounded-2xl flex items-center justify-center transition-colors cursor-pointer">
                   <Heart size={14} className="fill-current" />
                 </button>
               </div>
+            </motion.div>
+          ) : isRoutingActive && selectedPlace ? (
+            // Case B: Routing mode is active, display navigation steps summary and detailed steps list
+            <motion.div
+              initial={{ y: 150, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 150, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 220, damping: 20 }}
+              className="bg-white/95 backdrop-blur-[20px] p-4 rounded-[32px] border border-white/80 shadow-2xl flex flex-col gap-3 pointer-events-auto select-none text-slate-700"
+            >
+              {/* Header: Distance & Time info */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+                    <Navigation size={14} className="fill-current animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="font-display font-black text-slate-800 text-lg leading-none">
+                        {routeDetails ? routeDetails.duration : '-- phút'}
+                      </span>
+                      <span className="font-display font-bold text-slate-400 text-xs">
+                        ({routeDetails ? routeDetails.distance : '-- km'})
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-bold mt-0.5">Tuyến đường nhanh nhất qua OSRM</p>
+                  </div>
+                </div>
+
+                {/* Show/Hide details button */}
+                {routeDetails && routeDetails.steps && routeDetails.steps.length > 0 && (
+                  <button
+                    onClick={() => setIsDirectionsExpanded(!isDirectionsExpanded)}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-slate-50 hover:bg-slate-100 border border-slate-200/50 text-[10.5px] font-extrabold text-indigo-600 cursor-pointer transition-colors"
+                  >
+                    <span>{isDirectionsExpanded ? "Ẩn chỉ dẫn" : "Chi tiết rẽ"}</span>
+                    {isDirectionsExpanded ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+                  </button>
+                )}
+              </div>
+
+              {/* Expanded Turn-by-Turn Instruction List */}
+              <AnimatePresence>
+                {isDirectionsExpanded && routeDetails && routeDetails.steps && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden border-t border-slate-100 pt-3"
+                  >
+                    <div className="max-h-[220px] overflow-y-auto pr-1 flex flex-col gap-3 scrollbar-thin scrollbar-thumb-slate-200">
+                      {routeDetails.steps.map((step: any, idx: number) => {
+                        const iconInfo = getStepIcon(step);
+                        const textInstruction = getStepInstruction(step);
+                        const isLast = idx === routeDetails.steps.length - 1;
+
+                        return (
+                          <div key={idx} className="flex gap-3 items-start relative">
+                            {/* Visual connector lines */}
+                            <div className="flex flex-col items-center shrink-0 w-6 relative">
+                              <div className={`w-6 h-6 rounded-full border flex items-center justify-center
+                                ${idx === 0 ? 'bg-indigo-600 border-indigo-600 text-white' : ''}
+                                ${isLast ? 'bg-rose-500 border-rose-500 text-white' : 'bg-slate-50 border-slate-200 text-slate-600'}
+                              `}>
+                                {iconInfo}
+                              </div>
+                              {!isLast && (
+                                <div className="w-0.5 h-8 bg-slate-100 absolute top-6 bottom-0"></div>
+                              )}
+                            </div>
+                            
+                            {/* Text instruction */}
+                            <div className="flex-1 py-0.5">
+                              <p className="text-[11.5px] font-bold text-slate-700 leading-tight">
+                                {textInstruction.title}
+                              </p>
+                              {textInstruction.sub && (
+                                <p className="text-[9.5px] font-medium text-slate-400 mt-0.5">
+                                  {textInstruction.sub}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           ) : null}
         </AnimatePresence>
