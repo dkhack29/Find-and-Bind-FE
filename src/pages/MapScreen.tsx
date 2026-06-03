@@ -213,7 +213,7 @@ export default function MapScreen() {
       
       const pos = await Geolocation.getCurrentPosition({
         enableHighAccuracy: true,
-        timeout: 5000
+        timeout: 10000
       });
       
       const lat = pos.coords.latitude;
@@ -232,6 +232,7 @@ export default function MapScreen() {
       console.warn("Capacitor Geolocation not available or failed, falling back to browser geolocation:", err);
       // 2. Web browser Geolocation fallback
       if (navigator.geolocation) {
+        // Try High Accuracy first with 10s timeout
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             const lat = pos.coords.latitude;
@@ -248,14 +249,35 @@ export default function MapScreen() {
             }, 300);
           },
           (error) => {
-            console.error("Browser GPS Request failed: ", error);
-            // Fallback coordinate on permission error: Thanh Hoa
-            setUserCoords({ lat: 19.8076, lon: 105.7765 });
-            localStorage.setItem('gps_consented', 'false');
-            localStorage.setItem('gps_denied', 'true');
-            setShowGpsModal(false);
+            console.warn("Browser GPS High Accuracy failed, trying low accuracy fallback:", error);
+            // Fallback to Low Accuracy (IP/Wi-Fi database lookup, fast and robust on desktop)
+            navigator.geolocation.getCurrentPosition(
+              (pos2) => {
+                const lat = pos2.coords.latitude;
+                const lon = pos2.coords.longitude;
+                setUserCoords({ lat, lon });
+                localStorage.setItem('gps_consented', 'true');
+                localStorage.setItem('gps_denied', 'false');
+                setShowGpsModal(false);
+                setTimeout(() => {
+                  const localProvince = findClosestProvince(lat, lon, provinces);
+                  if (localProvince) {
+                    handleProvinceSelect(localProvince);
+                  }
+                }, 300);
+              },
+              (error2) => {
+                console.error("Browser GPS Low Accuracy also failed: ", error2);
+                // Fallback coordinate on total failure: Thanh Hoa
+                setUserCoords({ lat: 19.8076, lon: 105.7765 });
+                localStorage.setItem('gps_consented', 'false');
+                localStorage.setItem('gps_denied', 'true');
+                setShowGpsModal(false);
+              },
+              { enableHighAccuracy: false, timeout: 10000 }
+            );
           },
-          { enableHighAccuracy: true, timeout: 5000 }
+          { enableHighAccuracy: true, timeout: 10000 }
         );
       } else {
         // Geolocation unsupported fallback: Thanh Hoa
