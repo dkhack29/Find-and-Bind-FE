@@ -261,9 +261,18 @@ export default function DetailedMap({
           const km = (route.distance / 1000).toFixed(1);
           const minutes = Math.round(route.duration / 60);
 
+          let durationText = "";
+          if (minutes >= 60) {
+            const hours = Math.floor(minutes / 60);
+            const remainingMins = minutes % 60;
+            durationText = remainingMins > 0 ? `${hours} giờ ${remainingMins} phút` : `${hours} giờ`;
+          } else {
+            durationText = `${minutes} phút`;
+          }
+
           setRouteInfo({
             distance: `${km} km`,
-            duration: `${minutes} phút`
+            duration: durationText
           });
 
           // Send the full steps array up to the parent component for modern navigation guidance list
@@ -271,7 +280,7 @@ export default function DetailedMap({
           const steps = legs.length > 0 ? (legs[0].steps || []) : [];
           onRouteCalculate?.({
             distance: `${km} km`,
-            duration: `${minutes} phút`,
+            duration: durationText,
             steps
           });
 
