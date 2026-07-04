@@ -14,6 +14,9 @@ import AICreator from './pages/AICreator';
 import TripDetail from './pages/TripDetail';
 import MapScreen from './pages/MapScreen';
 import Profile from './pages/Profile';
+import CaseTracking from './pages/CaseTracking';
+import AdminDispatchConsole from './pages/AdminDispatchConsole';
+import AdminPoiConsole from './pages/AdminPoiConsole';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -21,7 +24,7 @@ export function cn(...inputs: ClassValue[]) {
 
 function MainLayout() {
   const location = useLocation();
-  const hideNavRoutes = ['/place/', '/plan/new', '/plan/detail/'];
+  const hideNavRoutes = ['/place/', '/plan/new', '/plan/detail/', '/profile/cases', '/admin/dispatch', '/admin/poi'];
   const shouldHideNav = 
     hideNavRoutes.some(path => location.pathname.includes(path)) ||
     (location.pathname === '/map' && location.search.includes('routing=true'));
@@ -42,6 +45,9 @@ function MainLayout() {
               <Route path="/plan/detail/:id" element={<TripDetail />} />
               <Route path="/map" element={<MapScreen />} />
               <Route path="/profile" element={<Profile />} />
+              <Route path="/profile/cases" element={<CaseTracking />} />
+              <Route path="/admin/dispatch" element={<AdminDispatchConsole />} />
+              <Route path="/admin/poi" element={<AdminPoiConsole />} />
               <Route path="*" element={<Discovery />} />
             </Routes>
           </AnimatePresence>

@@ -4,8 +4,8 @@ import { Plus, Minus, Landmark, Hotel, Utensils, Star, Heart, Navigation, Locate
 import { motion, AnimatePresence } from 'motion/react';
 import placesData from '../../assets/places.json';
 import { ProvinceData, provinces } from './VietnamSvgMap';
+import { useAppContext } from '../../context/AppContext';
 
-// Dynamic POI structure
 export interface MapPlace {
   id: string;
   name: string;
@@ -17,6 +17,9 @@ export interface MapPlace {
   image: string;
   description: string;
   distance: string;
+  isSponsored?: boolean;
+  trustScore?: number;
+  riskLevel?: string;
 }
 
 interface DetailedMapProps {
@@ -30,6 +33,7 @@ interface DetailedMapProps {
   onSelectProvince: (province: ProvinceData | null) => void;
   selectedRegion?: string | null;
   onRouteCalculate?: (route: { distance: string; duration: string; steps: any[] } | null) => void;
+  onRequestGPS?: () => void;
 }
 
 export default function DetailedMap({ 
@@ -42,29 +46,74 @@ export default function DetailedMap({
   isRoutingActive,
   onSelectProvince,
   selectedRegion,
-  onRouteCalculate
+  onRouteCalculate,
+  onRequestGPS
 }: DetailedMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const tileLayerRef = useRef<L.TileLayer | null>(null); // Dynamic tile layer ref (Roadmap vs Satellite)
-  const routeLayerRef = useRef<L.Polyline | null>(null); // Dynamic routing layer ref
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const routeLayerRef = useRef<L.Polyline | null>(null);
   const markersRef = useRef<L.LayerGroup | null>(null);
+  const userMarkerRef = useRef<L.Marker | null>(null);
   const searchMarkerRef = useRef<L.Marker | null>(null);
   const [selectedLocalPlace, setSelectedLocalPlace] = useState<MapPlace | null>(null);
   const [mapType, setMapType] = useState<'roadmap' | 'satellite'>('roadmap');
   const [routeInfo, setRouteInfo] = useState<{ distance: string; duration: string } | null>(null);
 
+  // Read Phase 1 Avoid List & context places
+  const { avoidList, places: contextPlaces, featureFlags } = useAppContext();
+  const isAvoidListEnabled = featureFlags.avoidList && !featureFlags.globalKillSwitch;
+
   // Memoized places filtering based on selected province coordinates
   const places = useMemo(() => {
     if (!selectedProvince) return [];
     
-    // 1. Filter existing places in assets
-    const localPlaces = (placesData as any[]).filter(place => {
-      return Math.abs(place.lat - selectedProvince.lat) < 0.5 && Math.abs(place.lon - selectedProvince.lon) < 0.5;
-    }) as MapPlace[];
+    // 1. Filter places in context first (so registered merchant places show up)
+    const ctxPlacesInBounds = contextPlaces
+      .filter(p => {
+        if (!p.lat || !p.lon) return false;
+        return Math.abs(p.lat - selectedProvince.lat) < 0.6 && Math.abs(p.lon - selectedProvince.lon) < 0.6;
+      })
+      .map((p, idx) => ({
+        id: String(p.id),
+        name: p.title,
+        category: (p.tag.toLowerCase().includes('khách sạn') || p.tag.toLowerCase().includes('homestay') || p.tag.toLowerCase().includes('hotel') ? 'hotel' :
+                  p.tag.toLowerCase().includes('ẩm thực') || p.tag.toLowerCase().includes('nhà hàng') || p.tag.toLowerCase().includes('cafe') ? 'restaurant' : 'landmark') as 'landmark' | 'hotel' | 'restaurant',
+        lat: p.lat!,
+        lon: p.lon!,
+        rating: p.rating,
+        reviews: Number(p.reviewsCount) || 0,
+        image: p.imageClass,
+        description: p.description,
+        distance: `${(0.5 + idx * 0.4).toFixed(1)} km`,
+        isSponsored: p.isSponsored,
+        trustScore: p.trustScore,
+        riskLevel: p.riskLevel
+      }));
 
-    // 2. If no matching POIs exist in places.json, dynamically generate realistic local places
-    if (localPlaces.length === 0) {
+    // 2. Filter existing places in assets
+    const localPlaces = (placesData as any[]).filter(place => {
+      // Avoid duplicate keys if any match
+      const existsInCtx = ctxPlacesInBounds.some(cp => Math.abs(cp.lat - place.lat) < 0.0001 && Math.abs(cp.lon - place.lon) < 0.0001);
+      if (existsInCtx) return false;
+      return Math.abs(place.lat - selectedProvince.lat) < 0.5 && Math.abs(place.lon - selectedProvince.lon) < 0.5;
+    }).map((p, idx) => ({
+      id: p.id,
+      name: p.name,
+      category: p.category as 'landmark' | 'hotel' | 'restaurant',
+      lat: p.lat,
+      lon: p.lon,
+      rating: p.rating,
+      reviews: p.reviews,
+      image: p.image || 'bg-gradient-nature',
+      description: p.description,
+      distance: p.distance || `${(0.8 + idx * 0.3).toFixed(1)} km`
+    }));
+
+    const merged = [...ctxPlacesInBounds, ...localPlaces];
+
+    // 3. If no matching POIs exist, dynamically generate realistic local places
+    if (merged.length === 0) {
       const provinceNameClean = selectedProvince.name
         .replace("Thủ đô ", "")
         .replace("TP. ", "")
@@ -81,7 +130,6 @@ export default function DetailedMap({
       ];
 
       return mockTemplates.map((temp, index) => {
-        // Distribute coordinates in a tight cluster (approx 1.5km offset)
         const latOffset = (index % 2 === 0 ? 1 : -1) * (0.004 + (index * 0.002));
         const lonOffset = (index % 3 === 0 ? 1 : -1) * (0.0035 + (index * 0.0018));
 
@@ -100,15 +148,15 @@ export default function DetailedMap({
       });
     }
 
-    return localPlaces;
-  }, [selectedProvince]);
+    return merged;
+  }, [selectedProvince, contextPlaces]);
 
   // Filtered Places list
   const filteredPlaces = places.filter(place => {
     if (activeFilter === 'landmark') return place.category === 'landmark';
     if (activeFilter === 'hotel') return place.category === 'hotel';
     if (activeFilter === 'restaurant') return place.category === 'restaurant';
-    return true; // "Tất cả"
+    return true;
   });
 
   // Inject Leaflet CSS dynamically into document head
@@ -127,7 +175,6 @@ export default function DetailedMap({
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
-    // Destroy existing map if any
     if (mapRef.current) {
       mapRef.current.remove();
     }
@@ -142,7 +189,6 @@ export default function DetailedMap({
     const northEast = L.latLng(24.0, 110.5);
     const bounds = L.latLngBounds(southWest, northEast);
 
-    // Initialize leaflet map with default viewport settings
     const map = L.map(mapContainerRef.current, {
       center: initialCenter,
       zoom: initialZoom,
@@ -156,7 +202,6 @@ export default function DetailedMap({
 
     mapRef.current = map;
 
-    // Premium Light Theme Voyager Tile Layer (CartoDB Voyager) or Esri Satellite Tile Layer
     const initialUrl = mapType === 'roadmap'
       ? 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
       : 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
@@ -167,11 +212,29 @@ export default function DetailedMap({
     }).addTo(map);
     tileLayerRef.current = layer;
 
-    // Add Layer Group for Markers
     markersRef.current = L.layerGroup().addTo(map);
 
-    // Add user location pulsing marker inside Leaflet map if active
-    if (userCoords) {
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+      tileLayerRef.current = null;
+      routeLayerRef.current = null;
+      markersRef.current = null;
+      userMarkerRef.current = null;
+      searchMarkerRef.current = null;
+    };
+  }, [selectedProvince]);
+
+  // Update User Marker position
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !userCoords) return;
+
+    if (userMarkerRef.current) {
+      userMarkerRef.current.setLatLng([userCoords.lat, userCoords.lon]);
+    } else {
       const userHtml = `
         <div class="relative w-8 h-8 flex items-center justify-center">
           <div class="absolute inset-0 rounded-full bg-indigo-500/15 border border-indigo-400/10 scale-[2.2] animate-ping"></div>
@@ -188,19 +251,11 @@ export default function DetailedMap({
         iconAnchor: [16, 16]
       });
 
-      L.marker([userCoords.lat, userCoords.lon], { icon: userIcon }).addTo(map);
+      userMarkerRef.current = L.marker([userCoords.lat, userCoords.lon], { icon: userIcon, zIndexOffset: 2000 }).addTo(map);
     }
+  }, [userCoords, selectedProvince]);
 
-    // Cleanup map instance on unmount
-    return () => {
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
-    };
-  }, [selectedProvince, userCoords]);
-
-  // Dynamic Map Layer Switcher (Roadmap vs Esri Satellite)
+  // Toggle Map Type
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -220,12 +275,11 @@ export default function DetailedMap({
     tileLayerRef.current = layer;
   }, [mapType]);
 
-  // Dynamic OSRM Routing engine (100% Free & Keyless)
+  // OSRM Routing
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    // Clean old route line and state
     if (routeLayerRef.current) {
       routeLayerRef.current.remove();
       routeLayerRef.current = null;
@@ -249,7 +303,7 @@ export default function DetailedMap({
           const coordinates = route.geometry.coordinates.map((coord: number[]) => [coord[1], coord[0]] as L.LatLngExpression);
 
           const polyline = L.polyline(coordinates, {
-            color: '#4f46e5', // Brand Indigo
+            color: '#4f46e5',
             weight: 6,
             opacity: 0.8,
             lineCap: 'round',
@@ -275,7 +329,6 @@ export default function DetailedMap({
             duration: durationText
           });
 
-          // Send the full steps array up to the parent component for modern navigation guidance list
           const legs = route.legs || [];
           const steps = legs.length > 0 ? (legs[0].steps || []) : [];
           onRouteCalculate?.({
@@ -284,7 +337,6 @@ export default function DetailedMap({
             steps
           });
 
-          // Zoom fit bounds smoothly
           map.fitBounds(polyline.getBounds(), { padding: [60, 60] });
         }
       } catch (err) {
@@ -296,7 +348,7 @@ export default function DetailedMap({
     fetchOSRMRoute();
   }, [userCoords, selectedPlace, onRouteCalculate]);
 
-  // Smooth pan to user location when detailed routing is activated
+  // Pan to user location on route active
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !userCoords) return;
@@ -309,12 +361,11 @@ export default function DetailedMap({
     }
   }, [isRoutingActive, userCoords]);
 
-  // Update or fly to search result marker
+  // Fly to search marker
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    // Remove existing search marker
     if (searchMarkerRef.current) {
       searchMarkerRef.current.remove();
       searchMarkerRef.current = null;
@@ -347,7 +398,6 @@ export default function DetailedMap({
       newSearchMarker.openPopup();
       searchMarkerRef.current = newSearchMarker;
 
-      // Fly to the new coordinate smoothly (Google Maps zoom transition)
       map.flyTo([searchResult.lat, searchResult.lon], 15, {
         animate: true,
         duration: 1.8
@@ -355,7 +405,7 @@ export default function DetailedMap({
     }
   }, [searchResult]);
 
-  // Sync selected place from parent prop and smoothly zoom/pan closer (shifted up to prevent sheet overlapping)
+  // Sync selected place from parent prop
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -371,7 +421,7 @@ export default function DetailedMap({
     }
   }, [selectedPlace]);
 
-  // Instant zoom/set view to selected province coordinate on change (Snappy transition)
+  // Sync selected province
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -387,7 +437,7 @@ export default function DetailedMap({
     }
   }, [selectedProvince]);
 
-  // Instant fly/set view to selected region center when selectedRegion changes in overview mode
+  // Fly/set view to region center
   useEffect(() => {
     const map = mapRef.current;
     if (!map || selectedProvince || !selectedRegion) return;
@@ -405,7 +455,7 @@ export default function DetailedMap({
     }
   }, [selectedRegion, selectedProvince]);
 
-  // Dynamic Map click listener to select nearest province without showing dots
+  // Map Click Listener
   useEffect(() => {
     const map = mapRef.current;
     if (!map || selectedProvince) return;
@@ -424,7 +474,6 @@ export default function DetailedMap({
         }
       });
 
-      // 1.5 degrees (~165km) is a perfect click radius for a clean nationwide view
       if (closestProv && minDistance < 1.5) {
         onSelectProvince(closestProv);
       }
@@ -436,38 +485,51 @@ export default function DetailedMap({
     };
   }, [selectedProvince, onSelectProvince]);
 
-  // Update Markers when filtered list changes or selected province changes
+  // Update Markers with Avoid List & Sponsored support
   useEffect(() => {
     const map = mapRef.current;
     const markerGroup = markersRef.current;
     if (!map || !markerGroup) return;
 
-    // Clear existing active markers
     markerGroup.clearLayers();
 
     if (selectedProvince) {
-      // 2. Case B: Detailed Province Mode - Render local POI markers
-      const getMarkerHtml = (category: string, isSelected: boolean) => {
-        const colorClass = 
+      const getMarkerHtml = (category: string, isSelected: boolean, isSponsored?: boolean, isAvoided?: boolean) => {
+        let colorClass = 
           category === 'landmark' ? 'bg-emerald-500 border-emerald-400/80' : 
           category === 'hotel' ? 'bg-indigo-500 border-indigo-400/80' : 
           'bg-rose-500 border-rose-400/80';
         
-        const ringColor = 
+        let ringColor = 
           category === 'landmark' ? 'ring-emerald-500/35 shadow-[0_0_25px_rgba(16,185,129,0.65)] border-emerald-300' : 
           category === 'hotel' ? 'ring-indigo-500/35 shadow-[0_0_25px_rgba(99,102,241,0.65)] border-indigo-300' : 
           'ring-rose-500/35 shadow-[0_0_25px_rgba(244,63,94,0.65)] border-rose-300';
 
-        const glowStyle = isSelected 
+        // Sponsored highlighting
+        if (isSponsored) {
+          colorClass = 'bg-gradient-to-r from-amber-500 to-yellow-500 border-amber-300';
+          ringColor = 'ring-amber-400/50 shadow-[0_0_25px_rgba(245,158,11,0.9)] border-yellow-200';
+        }
+
+        let glowStyle = isSelected 
           ? `scale-[1.35] ring-[6px] ${ringColor} z-[9999] border-2` 
           : 'hover:scale-110';
 
+        // Dim styling if in Avoid List (FR-14)
+        if (isAvoided && isAvoidListEnabled) {
+          glowStyle = 'opacity-20 filter grayscale blur-[0.5px] scale-90 hover:scale-95';
+        }
+
+        const iconSvg = 
+          category === 'landmark' ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg>' :
+          category === 'hotel' ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10 22v-6.57a1 1 0 0 0-.73-.97C7.43 14 6 12.16 6 9.89V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6.89c0 2.27-1.43 4.1-3.27 4.57a1 1 0 0 0-.73.97V22"/><path d="M18 12h4"/><path d="M2 12h4"/></svg>' :
+          '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Z"/><path d="M19 15v7"/></svg>';
+
         return `
-          <div class="w-10 h-10 flex flex-col items-center justify-center select-none cursor-pointer group">
+          <div class="w-10 h-10 flex flex-col items-center justify-center select-none cursor-pointer group relative">
+            ${isSponsored ? '<div class="absolute -top-3 bg-amber-500 text-[7px] font-black uppercase text-white px-1 py-0.2 rounded border border-white shadow-soft z-[10000]">Ad</div>' : ''}
             <div class="w-8 h-8 rounded-full ${colorClass} text-white flex items-center justify-center shadow-lg relative border ${glowStyle} transition-all duration-300">
-              ${category === 'landmark' ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="lucide lucide-landmark"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg>' : ''}
-              ${category === 'hotel' ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="lucide lucide-hotel"><path d="M10 22v-6.57a1 1 0 0 0-.73-.97C7.43 14 6 12.16 6 9.89V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6.89c0 2.27-1.43 4.1-3.27 4.57a1 1 0 0 0-.73.97V22"/><path d="M18 12h4"/><path d="M2 12h4"/></svg>' : ''}
-              ${category === 'restaurant' ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="lucide lucide-utensils"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Z"/><path d="M19 15v7"/></svg>' : ''}
+              ${iconSvg}
               <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 ${colorClass.split(' ')[0]} rotate-45 border-r border-b border-inherit"></div>
             </div>
           </div>
@@ -476,8 +538,9 @@ export default function DetailedMap({
 
       filteredPlaces.forEach((place) => {
         const isSelected = selectedLocalPlace?.id === place.id;
+        const isAvoided = avoidList.includes(Number(place.id));
         const customIcon = L.divIcon({
-          html: getMarkerHtml(place.category, isSelected),
+          html: getMarkerHtml(place.category, isSelected, place.isSponsored, isAvoided),
           className: 'custom-leaflet-poi',
           iconSize: [40, 40],
           iconAnchor: [20, 36],
@@ -502,9 +565,8 @@ export default function DetailedMap({
         map.fitBounds(bounds, { padding: [40, 40] });
       }
     }
-  }, [selectedProvince, filteredPlaces, selectedLocalPlace, selectedRegion]);
+  }, [selectedProvince, filteredPlaces, selectedLocalPlace, selectedRegion, avoidList, isAvoidListEnabled]);
 
-  // Handle zooming events imperatively
   const zoomIn = () => {
     if (mapRef.current) mapRef.current.zoomIn();
   };
@@ -513,32 +575,25 @@ export default function DetailedMap({
     if (mapRef.current) mapRef.current.zoomOut();
   };
 
-  const locateUser = () => {
-    if (mapRef.current) {
-      if (userCoords) {
-        // Zoom to actual user GPS location
-        mapRef.current.setView([userCoords.lat, userCoords.lon], 15, {
-          animate: true,
-          duration: 1
-        });
-      } else {
-        // Fallback: Zoom back to the province center if GPS not available
-        mapRef.current.setView([lat, lon], 13, {
-          animate: true,
-          duration: 1
-        });
-      }
+  const locateUser = async () => {
+    if (onRequestGPS) {
+      onRequestGPS();
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    if (mapRef.current && userCoords) {
+      mapRef.current.flyTo([userCoords.lat, userCoords.lon], 15, {
+        animate: true,
+        duration: 1.5
+      });
     }
   };
 
   return (
     <div className="absolute inset-0 z-0 bg-slate-50 overflow-hidden">
-      {/* Target Container for Leaflet Canvas */}
       <div ref={mapContainerRef} className="w-full h-full" />
 
-      {/* Floating Controls Overlay */}
       <div className="absolute right-4 bottom-40 z-[9999] flex flex-col gap-3 pointer-events-auto">
-        {/* Toggle Map Type (Roadmap / Satellite) */}
         <button 
           onClick={() => setMapType(mapType === 'roadmap' ? 'satellite' : 'roadmap')}
           className="w-12 h-12 bg-white shadow-2xl rounded-2xl text-slate-700 flex items-center justify-center border border-slate-100 active:scale-90 transition-all cursor-pointer hover:bg-slate-50"
@@ -549,7 +604,6 @@ export default function DetailedMap({
           </span>
         </button>
 
-        {/* Locate Me Button */}
         <button 
           onClick={locateUser}
           className="w-12 h-12 bg-white shadow-2xl rounded-2xl text-slate-700 flex items-center justify-center border border-slate-100 active:scale-90 transition-all cursor-pointer hover:bg-slate-50"
@@ -558,7 +612,6 @@ export default function DetailedMap({
           <LocateFixed size={24} className={userCoords ? "text-indigo-600" : "text-slate-500"} />
         </button>
 
-        {/* Zoom Group */}
         <div className="flex flex-col bg-white shadow-2xl rounded-2xl border border-slate-100 overflow-hidden">
           <button
             onClick={zoomIn}
@@ -577,9 +630,7 @@ export default function DetailedMap({
         </div>
       </div>
 
-      {/* Top Indicators Row */}
       <div className="absolute top-28 left-6 right-6 z-10 pointer-events-none flex flex-col gap-2">
-        {/* Mini Top Indicator overlay showing province name */}
         <div className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full border border-slate-200/80 shadow-md flex items-center gap-2 w-max pointer-events-auto">
           <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
           <span className="font-display text-xs font-bold text-slate-700 tracking-wide">
@@ -587,7 +638,6 @@ export default function DetailedMap({
           </span>
         </div>
 
-        {/* OSRM Route travel information */}
         {routeInfo && (
           <div className="bg-indigo-600 text-white px-4 py-2.5 rounded-2xl border border-indigo-500 shadow-lg flex items-center gap-2.5 w-max pointer-events-auto animate-in fade-in slide-in-from-top-4 duration-300">
             <Navigation size={12} className="text-white fill-current animate-bounce shrink-0" />

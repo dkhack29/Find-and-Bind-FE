@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Find and Bind- FE',
   webDir: 'dist',
   server: {
-    url: 'http://192.168.1.6:3000',
+    url: 'http://10.0.2.2:3000/',
     cleartext: true
   }
 };
