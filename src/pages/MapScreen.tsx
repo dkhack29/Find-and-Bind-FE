@@ -792,11 +792,38 @@ export default function MapScreen() {
                   </div>
                 </div>
               </div>
+<<<<<<< HEAD
               <p className="text-[11px] text-slate-500 font-medium leading-relaxed line-clamp-2">
                 {selectedPlace.description}
               </p>
+=======
+              {/* Description with short-review annotation */}
+              <div className="relative">
+                <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                  {selectedPlace.description}
+                </p>
+                {selectedPlace.description && selectedPlace.description.length < 80 && (
+                  <span className="inline-flex items-center gap-1 mt-1 text-[9px] font-bold text-amber-500 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">
+                    <Star size={8} className="fill-amber-400 stroke-amber-400" />
+                    Dữ liệu được thu thập từ cộng đồng theo quy trình nội bộ
+                  </span>
+                )}
+              </div>
+
+              {/* 3-button action row */}
+>>>>>>> 6d10b0462304bd2a311987c3f46183c555177b21
               <div className="flex gap-2">
-                <button 
+                {/* Nút 1: Chi tiết – show tất cả reviews gần nhất */}
+                <button
+                  className="flex-1 py-2.5 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 border border-slate-200/80 text-slate-700 font-display text-[10.5px] font-bold rounded-2xl flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  title="Xem tất cả đánh giá gần nhất"
+                >
+                  <Star size={12} className="text-amber-400 fill-amber-400" />
+                  Chi tiết
+                </button>
+
+                {/* Nút 2: Đường dẫn – chỉ đường từ vị trí hiện tại */}
+                <button
                   onClick={async () => {
                     if (avoidList.includes(Number(selectedPlace.id))) {
                       alert("Không thể tìm đường đến địa điểm trong danh sách tránh xa.");
@@ -807,11 +834,18 @@ export default function MapScreen() {
                     }
                     setIsRoutingActive(true);
                   }}
+<<<<<<< HEAD
                   className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-display text-xs font-bold rounded-2xl shadow-lg shadow-indigo-600/15 transition-all cursor-pointer text-center"
+=======
+                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-display text-[10.5px] font-bold rounded-2xl flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/20 transition-all cursor-pointer"
+                  title="Chỉ đường từ vị trí hiện tại"
+>>>>>>> 6d10b0462304bd2a311987c3f46183c555177b21
                 >
-                  Chỉ đường chi tiết
+                  <Navigation size={12} className="fill-current" />
+                  Đường dẫn
                 </button>
 
+<<<<<<< HEAD
                 {/* POI Compare Checkbox Option (FR-13) */}
                 {featureFlags.comparePois && !featureFlags.globalKillSwitch && (
                   <label className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 px-3.5 py-2.5 rounded-2xl cursor-pointer active:scale-95 transition-all text-[11px] font-black uppercase shrink-0">
@@ -830,6 +864,14 @@ export default function MapScreen() {
                   className="px-4 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-2xl flex items-center justify-center transition-colors cursor-pointer"
                 >
                   Chi tiết
+=======
+                {/* Nút 3: Yêu thích – thêm vào danh sách yêu thích */}
+                <button
+                  className="w-11 h-10 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 border border-rose-100 text-rose-500 hover:text-rose-600 rounded-2xl flex items-center justify-center transition-all cursor-pointer shrink-0"
+                  title="Thêm vào danh sách yêu thích"
+                >
+                  <Heart size={14} className="fill-current" />
+>>>>>>> 6d10b0462304bd2a311987c3f46183c555177b21
                 </button>
               </div>
             </motion.div>
