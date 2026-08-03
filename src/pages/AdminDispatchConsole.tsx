@@ -15,9 +15,12 @@ const REASON_CODES = [
 
 export default function AdminDispatchConsole() {
   const navigate = useNavigate();
-  const { cases, updateCaseStatus, role, appeals, updateAppealStatus, places } = useAppContext();
+  const { 
+    cases, updateCaseStatus, role, appeals, updateAppealStatus, places,
+    rescuePicks, approveRescuePick, rejectRescuePick
+  } = useAppContext();
   
-  const [activeTab, setActiveTab] = useState<'reports' | 'appeals'>('reports');
+  const [activeTab, setActiveTab] = useState<'reports' | 'appeals' | 'rescue'>('reports');
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [showActionModal, setShowActionModal] = useState<'resolve' | 'reject' | null>(null);
   const [selectedReasonCode, setSelectedReasonCode] = useState('INF-01');
@@ -133,6 +136,15 @@ export default function AdminDispatchConsole() {
           )}
         >
           Đơn Kháng cáo ({pendingAppeals.length})
+        </button>
+        <button 
+          onClick={() => { setActiveTab('rescue'); setSelectedAppealId(null); }}
+          className={cn(
+            "pb-2 text-xs font-black uppercase tracking-wider border-b-2 transition-all",
+            activeTab === 'rescue' ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-400"
+          )}
+        >
+          Duyệt Giải cứu ({rescuePicks.filter(p => p.status === 'pending_mod' || p.status === 'pending_admin').length})
         </button>
       </div>
 
@@ -375,6 +387,150 @@ export default function AdminDispatchConsole() {
                 </div>
               </div>
             )}
+          </>
+        )}
+
+        {activeTab === 'rescue' && (
+          <>
+            {/* Queue Summary */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Chờ duyệt (Mod)</span>
+                <span className="text-xl font-black text-amber-600">{rescuePicks.filter(p => p.status === 'pending_mod').length}</span>
+              </div>
+              <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Chờ duyệt (Admin)</span>
+                <span className="text-xl font-black text-indigo-600">{rescuePicks.filter(p => p.status === 'pending_admin').length}</span>
+              </div>
+              <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Đang hiển thị</span>
+                <span className="text-xl font-black text-emerald-600">{rescuePicks.filter(p => p.status === 'approved').length}/20</span>
+              </div>
+            </div>
+
+            {/* Moderator Stage 1 Queue */}
+            <div>
+              <h3 className="font-bold text-base text-slate-900 mb-3 flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+                Hàng chờ Moderator (Tầng 1)
+              </h3>
+              
+              {rescuePicks.filter(p => p.status === 'pending_mod').length === 0 ? (
+                <p className="text-xs text-slate-400 italic bg-white p-4 rounded-xl border border-slate-100 text-center">Không có địa điểm nào chờ duyệt tầng 1.</p>
+              ) : (
+                <div className="space-y-4">
+                  {rescuePicks.filter(p => p.status === 'pending_mod').map(pick => (
+                    <div key={pick.id} className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-sm text-left">
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-black text-slate-800 text-base">{pick.title}</h4>
+                        <span className="bg-amber-50 border border-amber-200 text-amber-700 text-[8.5px] font-extrabold uppercase px-2 py-0.5 rounded-md">Chờ duyệt Mod</span>
+                      </div>
+                      <p className="text-xs text-slate-500 font-semibold mb-3">📍 {pick.location} | GPS: [{pick.lat.toFixed(4)}, {pick.lon.toFixed(4)}]</p>
+                      <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-xl mb-4">{pick.description}</p>
+                      
+                      <div className="mb-4">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Lý do giải cứu đề xuất:</span>
+                        <div className="flex flex-col gap-1">
+                          {pick.reasons.map((r, i) => (
+                            <span key={i} className="text-xs font-semibold text-slate-600 flex items-center gap-1">✨ {r}</span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => approveRescuePick(pick.id, 'moderator')}
+                          className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 animate-none"
+                        >
+                          <Check size={14} /> Duyệt chuyển Admin
+                        </button>
+                        <button
+                          onClick={() => rejectRescuePick(pick.id)}
+                          className="py-2.5 px-4 bg-slate-100 hover:bg-red-50 hover:text-red-600 text-slate-500 text-xs font-black uppercase rounded-xl transition-all cursor-pointer"
+                        >
+                          Từ chối
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Admin Stage 2 Queue */}
+            <div>
+              <h3 className="font-bold text-base text-slate-900 mb-3 flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse" />
+                Hàng chờ Admin (Tầng 2 - Lên Spotlight)
+              </h3>
+              
+              {rescuePicks.filter(p => p.status === 'pending_admin').length === 0 ? (
+                <p className="text-xs text-slate-400 italic bg-white p-4 rounded-xl border border-slate-100 text-center">Không có địa điểm nào chờ duyệt tầng 2.</p>
+              ) : (
+                <div className="space-y-4">
+                  {rescuePicks.filter(p => p.status === 'pending_admin').map(pick => (
+                    <div key={pick.id} className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-sm text-left">
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-black text-slate-800 text-base">{pick.title}</h4>
+                        <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[8.5px] font-extrabold uppercase px-2 py-0.5 rounded-md">Chờ duyệt Admin</span>
+                      </div>
+                      <p className="text-xs text-slate-500 font-semibold mb-3">📍 {pick.location} | GPS: [{pick.lat.toFixed(4)}, {pick.lon.toFixed(4)}]</p>
+                      <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-xl mb-4">{pick.description}</p>
+                      
+                      <div className="mb-4">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Lý do giải cứu đề xuất:</span>
+                        <div className="flex flex-col gap-1">
+                          {pick.reasons.map((r, i) => (
+                            <span key={i} className="text-xs font-semibold text-slate-600 flex items-center gap-1">✨ {r}</span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        {role === 'admin' ? (
+                          <button
+                            onClick={() => approveRescuePick(pick.id, 'admin')}
+                            className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 animate-none"
+                          >
+                            <Check size={14} /> Duyệt lên Spotlight (Lớp 2)
+                          </button>
+                        ) : (
+                          <div className="flex-1 py-2.5 bg-slate-100 text-slate-400 text-xs font-bold rounded-xl text-center flex items-center justify-center gap-1 border border-dashed border-slate-200">
+                            🔒 Yêu cầu vai trò Admin để duyệt lớp 2
+                          </div>
+                        )}
+                        <button
+                          onClick={() => rejectRescuePick(pick.id)}
+                          className="py-2.5 px-4 bg-slate-100 hover:bg-red-50 hover:text-red-600 text-slate-500 text-xs font-black uppercase rounded-xl transition-all cursor-pointer"
+                        >
+                          Từ chối
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Already Approved list */}
+            <div>
+              <h3 className="font-bold text-base text-slate-900 mb-3">Địa điểm đang được Giải cứu tích cực</h3>
+              <div className="bg-white rounded-[24px] border border-slate-100 p-4 space-y-3">
+                {rescuePicks.filter(p => p.status === 'approved').length === 0 ? (
+                  <p className="text-xs text-slate-400 italic text-center">Chưa có địa điểm nào được giải cứu.</p>
+                ) : (
+                  rescuePicks.filter(p => p.status === 'approved').map(p => (
+                    <div key={p.id} className="flex justify-between items-center pb-3 border-b border-slate-100 last:border-b-0 last:pb-0">
+                      <div>
+                        <h4 className="font-bold text-xs text-slate-800">{p.title}</h4>
+                        <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Hết hạn: {new Date(p.expiryDate).toLocaleDateString('vi-VN')}</p>
+                      </div>
+                      <span className="bg-green-50 text-green-700 text-[8.5px] font-black uppercase px-2 py-1 rounded-md border border-green-200">Hoạt động</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </>
         )}
       </div>

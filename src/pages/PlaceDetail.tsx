@@ -14,11 +14,12 @@ export default function PlaceDetail() {
   const navigate = useNavigate();
   const { 
     places, savedPlaceIds, toggleSavedPlace, reviews, addReview, user, 
-    addCaseWithCoords, featureFlags, apiQuota, incrementQuota, savePlaceToCollection, tasteCollections
+    addCaseWithCoords, featureFlags, apiQuota, incrementQuota, savePlaceToCollection, tasteCollections,
+    rescuePicks
   } = useAppContext();
   
   const placeId = Number(id);
-  const place = places.find(p => p.id === placeId);
+  const place = places.find(p => p.id === placeId) || rescuePicks.find(p => p.id === placeId);
   const placeReviews = reviews.filter(r => r.placeId === placeId);
   
   const isSaved = savedPlaceIds.includes(placeId);
