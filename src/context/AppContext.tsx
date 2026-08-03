@@ -88,6 +88,151 @@ export type Case = {
   evidenceUrl?: string; // Evidence attachment
 };
 
+export type RescuePick = {
+  id: number;
+  title: string;
+  tag: string;
+  description: string;
+  reasons: string[];
+  imageClass: string;
+  location: string;
+  rating: number;
+  reviewsCount: number;
+  price: string;
+  trustScore: number;
+  lat: number;
+  lon: number;
+  status: 'pending_mod' | 'pending_admin' | 'approved' | 'rejected';
+  dateAdded: string;
+  expiryDate: string;
+};
+
+export type LamportEvent = {
+  id: string;
+  tripId: number;
+  lamport: number;
+  clientId: string;
+  action: 'add_item' | 'delete_item' | 'update_name';
+  data: any;
+};
+
+export type PoiFingerprint = {
+  id: string;
+  title: string;
+  lat: number;
+  lon: number;
+  layoutHash: string;
+  taxId: string;
+  bannedAt: string;
+};
+
+const INITIAL_RESCUE_PICKS: RescuePick[] = [
+  {
+    id: 101,
+    title: "Bánh Mì Bà Đào - Vị Xưa",
+    tag: "Ăn uống bình dân",
+    description: "Xe bánh mì nhỏ trong hẻm sâu với công thức gia truyền hơn 35 năm. Dù rất ngon và giá rẻ nhưng do vị trí khuất và không có chi phí marketing nên rất ít khách biết tới.",
+    reasons: ["Điểm đánh giá thực tế cao (4.8)", "Nằm trong hẻm sâu khuất tầm nhìn", "Ưu đãi 15% cho thành viên ứng dụng"],
+    imageClass: "bg-gradient-nature",
+    location: "Hải Châu, Đà Nẵng",
+    rating: 4.8,
+    reviewsCount: 14,
+    price: "20.000đ - 30.000đ",
+    trustScore: 90,
+    lat: 16.0678,
+    lon: 108.2208,
+    status: 'approved',
+    dateAdded: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
+    expiryDate: new Date(Date.now() + 12 * 24 * 3600 * 1000).toISOString()
+  },
+  {
+    id: 102,
+    title: "Cà Phê Sân Vườn Góc Kỷ Niệm",
+    tag: "Cà phê / Trà",
+    description: "Không gian cà phê yên tĩnh mát mẻ, phục vụ bởi gia đình cô chú lớn tuổi thân thiện. Gặp khó khăn tài chính sau dịch và đang đứng trước nguy cơ đóng cửa vì thiếu khách ghé thăm.",
+    reasons: ["Không gian yên tĩnh phù hợp làm việc", "Chủ quán thân thiện nhiệt tình", "Hỗ trợ phục hồi sinh kế địa phương"],
+    imageClass: "bg-gradient-mesh",
+    location: "Sơn Trà, Đà Nẵng",
+    rating: 4.6,
+    reviewsCount: 9,
+    price: "15.000đ - 25.000đ",
+    trustScore: 88,
+    lat: 16.0754,
+    lon: 108.2435,
+    status: 'approved',
+    dateAdded: new Date(Date.now() - 4 * 24 * 3600 * 1000).toISOString(),
+    expiryDate: new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString()
+  },
+  {
+    id: 103,
+    title: "Bún Bò Huế Chị Bé",
+    tag: "Ăn uống bình dân",
+    description: "Quán bún bò chính gốc Huế nằm ở ven đường ngoại ô. Nước dùng thanh ngọt từ xương hầm chuẩn vị. Rất cần được quảng bá để tăng doanh thu trang trải sinh hoạt.",
+    reasons: ["Nước dùng chuẩn vị Huế xưa", "Giá cả cực kỳ bình dân", "Đang gặp khó khăn do mặt bằng bị che khuất"],
+    imageClass: "bg-gradient-urban",
+    location: "Q. Ngũ Hành Sơn, Đà Nẵng",
+    rating: 4.7,
+    reviewsCount: 5,
+    price: "30.000đ - 45.000đ",
+    trustScore: 85,
+    lat: 16.0312,
+    lon: 108.2612,
+    status: 'pending_admin',
+    dateAdded: new Date().toISOString(),
+    expiryDate: new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString()
+  },
+  {
+    id: 104,
+    title: "Homestay Ông Năm Đất Mũi",
+    tag: "Khách sạn / Homestay",
+    description: "Homestay miệt vườn sông nước, tự phục vụ nấu nướng câu cá giải trí. Do địa điểm xa xôi hẻo lánh nên lượng khách ghé thăm rất thấp dù được đánh giá rất cao về trải nghiệm mộc mạc.",
+    reasons: ["Trải nghiệm miệt vườn chuẩn miền Tây", "Chủ nhà mộc mạc hiếu khách", "Được hỗ trợ bởi chương trình phát triển nông nghiệp xanh"],
+    imageClass: "bg-gradient-nature",
+    location: "Năm Căn, Cà Mau",
+    rating: 4.9,
+    reviewsCount: 7,
+    price: "150.000đ - 250.000đ",
+    trustScore: 92,
+    lat: 8.7432,
+    lon: 104.9812,
+    status: 'pending_mod',
+    dateAdded: new Date().toISOString(),
+    expiryDate: new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString()
+  }
+];
+
+const INITIAL_BANNED_FINGERPRINTS: PoiFingerprint[] = [
+  {
+    id: "BF-001",
+    title: "Quán Ăn Chặt Chém Làng Chài",
+    lat: 10.7719,
+    lon: 106.6983,
+    layoutHash: "H4X-992-B83",
+    taxId: "0311234567",
+    bannedAt: "2026-05-15T10:00:00Z"
+  },
+  {
+    id: "BF-002",
+    title: "Homestay Ma Lén",
+    lat: 11.9404,
+    lon: 108.4583,
+    layoutHash: "Z9Y-102-M40",
+    taxId: "0429876543",
+    bannedAt: "2026-06-20T14:30:00Z"
+  }
+];
+
+const INITIAL_LAMPORT_EVENTS: LamportEvent[] = [
+  {
+    id: "evt-001",
+    tripId: 1,
+    lamport: 1,
+    clientId: "client-A",
+    action: "add_item",
+    data: { day: 1, time: "09:00", act: "Đến tại khách sạn & Gửi hành lý", type: "logistic" }
+  }
+];
+
 const INITIAL_PLACES: Place[] = [
   {
     id: 1, title: "Vịnh Hạ Long", tag: "Tuyệt tác thiên nhiên", rating: 4.9, reviewsCount: 2400, imageClass: "bg-gradient-nature", location: "Quảng Ninh, Việt Nam", description: "Một trong những kỳ quan thiên nhiên của thế giới, với hàng ngàn hòn đảo đá vôi kỳ vĩ vươn lên từ mặt nước xanh ngọc. Trải nghiệm lý tưởng: du thuyền qua đêm, chèo kayak và khám phá hang động hoang sơ.", reasons: ["Hợp gu vì tag 'Thiên nhiên'", "Đang mùa đẹp nhất (Tháng 5)"], price: "Từ 1,200,000đ",
@@ -168,6 +313,21 @@ type AppContextType = {
   submitAppeal: (appeal: Omit<Appeal, 'id' | 'status'>) => void;
   updateAppealStatus: (id: string, status: 'approved' | 'rejected') => void;
   verifyEkycL3: (hash: string) => void;
+
+  // Phase 2 Features States
+  rescuePicks: RescuePick[];
+  bannedFingerprints: PoiFingerprint[];
+  lamportEvents: LamportEvent[];
+  legalHoldActive: boolean;
+  setLegalHoldActive: (val: boolean) => void;
+  purgeLogs: string[];
+  approveRescuePick: (id: number, stage: 'moderator' | 'admin') => void;
+  rejectRescuePick: (id: number) => void;
+  submitRescuePick: (pick: Omit<RescuePick, 'id' | 'status' | 'dateAdded' | 'expiryDate'>) => void;
+  addLamportEvent: (event: Omit<LamportEvent, 'id'>) => void;
+  syncLamportEvents: (tripId: number, incomingEvents: LamportEvent[]) => void;
+  checkPoiFingerprint: (lat: number, lon: number, layoutHash: string, taxId: string) => { match: boolean; reason?: string };
+  runPurgeWorker: () => void;
 };
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -268,6 +428,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       caseId: 'RP-2938'
     }
   ]);
+
+  const [rescuePicks, setRescuePicks] = useState<RescuePick[]>(INITIAL_RESCUE_PICKS);
+  const [bannedFingerprints, setBannedFingerprints] = useState<PoiFingerprint[]>(INITIAL_BANNED_FINGERPRINTS);
+  const [lamportEvents, setLamportEvents] = useState<LamportEvent[]>(INITIAL_LAMPORT_EVENTS);
+  const [legalHoldActive, setLegalHoldActive] = useState<boolean>(false);
+  const [purgeLogs, setPurgeLogs] = useState<string[]>([]);
 
   const updateFeatureFlags = (flags: FeatureFlags) => {
     setFeatureFlags(flags);
@@ -481,6 +647,179 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
+  // Phase 2 Functions
+  const approveRescuePick = (id: number, stage: 'moderator' | 'admin') => {
+    setRescuePicks(prev => {
+      const approvedCount = prev.filter(p => p.status === 'approved').length;
+      if (stage === 'admin' && approvedCount >= 20) {
+        alert("Đã đạt giới hạn slot giải cứu tối đa (rescue_slots_max = 20)!");
+        return prev;
+      }
+      return prev.map(p => {
+        if (p.id === id) {
+          if (stage === 'moderator' && p.status === 'pending_mod') {
+            return { ...p, status: 'pending_admin' };
+          }
+          if (stage === 'admin' && p.status === 'pending_admin') {
+            return {
+              ...p,
+              status: 'approved',
+              dateAdded: new Date().toISOString(),
+              expiryDate: new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString()
+            };
+          }
+        }
+        return p;
+      });
+    });
+  };
+
+  const rejectRescuePick = (id: number) => {
+    setRescuePicks(prev => prev.map(p => {
+      if (p.id === id) {
+        return { ...p, status: 'rejected' };
+      }
+      return p;
+    }));
+  };
+
+  const submitRescuePick = (pick: Omit<RescuePick, 'id' | 'status' | 'dateAdded' | 'expiryDate'>) => {
+    const newPick: RescuePick = {
+      ...pick,
+      id: Date.now(),
+      status: 'pending_mod',
+      dateAdded: new Date().toISOString(),
+      expiryDate: new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString()
+    };
+    setRescuePicks(prev => [newPick, ...prev]);
+  };
+
+  const addLamportEvent = (event: Omit<LamportEvent, 'id'>) => {
+    const newEvent: LamportEvent = {
+      ...event,
+      id: `evt-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+    };
+    setLamportEvents(prev => [...prev, newEvent]);
+  };
+
+  const syncLamportEvents = (tripId: number, incomingEvents: LamportEvent[]) => {
+    setLamportEvents(prev => {
+      const allEvents = [...prev];
+      incomingEvents.forEach(ie => {
+        if (!allEvents.find(e => e.id === ie.id)) {
+          allEvents.push(ie);
+        }
+      });
+      
+      // Sort events by Lamport timestamp, breaking ties using clientId
+      allEvents.sort((a, b) => {
+        if (a.lamport !== b.lamport) {
+          return a.lamport - b.lamport;
+        }
+        return a.clientId.localeCompare(b.clientId);
+      });
+      
+      // Rebuild the trip itinerary based on the sorted log
+      setTrips(currentTrips => {
+        return currentTrips.map(t => {
+          if (t.id === tripId) {
+            // Find base trip Day 1 or create it
+            const baseItinerary: TripDay[] = [
+              { day: 1, title: "Ngày 1: Hành trình nhóm", items: [] }
+            ];
+            
+            allEvents.forEach(evt => {
+              if (evt.tripId === tripId) {
+                if (evt.action === 'add_item') {
+                  const dayNum = evt.data.day || 1;
+                  let targetDay = baseItinerary.find(d => d.day === dayNum);
+                  if (!targetDay) {
+                    targetDay = { day: dayNum, title: `Ngày ${dayNum}: Vui chơi`, items: [] };
+                    baseItinerary.push(targetDay);
+                  }
+                  // Check if item already exists to avoid duplication
+                  if (!targetDay.items.find(item => item.act === evt.data.act && item.time === evt.data.time)) {
+                    targetDay.items.push({
+                      time: evt.data.time,
+                      act: evt.data.act,
+                      type: evt.data.type || 'activity'
+                    });
+                  }
+                } else if (evt.action === 'delete_item') {
+                  baseItinerary.forEach(d => {
+                    d.items = d.items.filter(item => item.act !== evt.data.act);
+                  });
+                } else if (evt.action === 'update_name') {
+                  t.name = evt.data.name;
+                }
+              }
+            });
+            
+            return {
+              ...t,
+              itinerary: baseItinerary
+            };
+          }
+          return t;
+        });
+      });
+
+      return allEvents;
+    });
+  };
+
+  const checkPoiFingerprint = (lat: number, lon: number, layoutHash: string, taxId: string) => {
+    const match = bannedFingerprints.find(bf => {
+      const geoMatch = Math.abs(bf.lat - lat) < 0.00015 && Math.abs(bf.lon - lon) < 0.00015;
+      const layoutMatch = bf.layoutHash.trim().toLowerCase() === layoutHash.trim().toLowerCase();
+      const taxMatch = bf.taxId.trim() === taxId.trim();
+      return geoMatch || layoutMatch || taxMatch;
+    });
+    if (match) {
+      let reason = "";
+      if (match.taxId === taxId) {
+        reason = `Mã số thuế trùng khớp với thực thể bị cấm (${match.title})`;
+      } else if (match.layoutHash === layoutHash) {
+        reason = `Bản vẽ cấu trúc mặt bằng trùng khớp với thực thể bị cấm (${match.title})`;
+      } else {
+        reason = `Tọa độ GPS trùng khớp cực cận với thực thể bị cấm (${match.title})`;
+      }
+      return { match: true, reason };
+    }
+    return { match: false };
+  };
+
+  const runPurgeWorker = () => {
+    if (legalHoldActive) {
+      alert("Hệ thống đang ở chế độ Đóng băng Pháp lý (Legal Hold). Tạm hoãn mọi tiến trình dọn dẹp dữ liệu.");
+      return;
+    }
+    
+    const now = new Date();
+    let purgedItems: string[] = [];
+    
+    // Purge expired approved rescue picks (>14 days)
+    setRescuePicks(prev => {
+      const expired = prev.filter(p => p.status === 'approved' && new Date(p.expiryDate) < now);
+      expired.forEach(e => {
+        purgedItems.push(`[Rescue Picks] Đã ẩn & xóa booth giải cứu hết hạn của "${e.title}".`);
+      });
+      return prev.filter(p => !(p.status === 'approved' && new Date(p.expiryDate) < now));
+    });
+    
+    // Purge data shared if revoked consent
+    if (!privacySettings.allowShareData) {
+      purgedItems.push(`[Nghị định 13] Rút quyền chia sẻ: Đã xóa toàn bộ cache lịch sử duyệt, vị trí và hành trình nhóm.`);
+    }
+
+    if (purgedItems.length > 0) {
+      setPurgeLogs(prev => [...purgedItems, ...prev]);
+      alert(`Đã thực thi Auto-purge thành công: Xóa ${purgedItems.length} đầu mục dữ liệu.`);
+    } else {
+      alert("Không có dữ liệu hết hạn hoặc cần dọn dẹp tại thời điểm này.");
+    }
+  };
+
   return (
     <AppContext.Provider value={{
       role, setRole, places, addPlace, addPlaceWithOwner, trips, addTrip, savedPlaceIds, toggleSavedPlace, reviews, addReview,
@@ -490,7 +829,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Phase 1 States
       featureFlags, updateFeatureFlags, apiQuota, incrementQuota, avoidList, addToAvoidList, removeFromAvoidList,
       tasteCollections, addTasteCollection, savedPlacesCollection, savePlaceToCollection,
-      merchantWalletBalance, updateMerchantWallet, appeals, submitAppeal, updateAppealStatus, verifyEkycL3
+      merchantWalletBalance, updateMerchantWallet, appeals, submitAppeal, updateAppealStatus, verifyEkycL3,
+
+      // Phase 2 States
+      rescuePicks, bannedFingerprints, lamportEvents, legalHoldActive, setLegalHoldActive, purgeLogs,
+      approveRescuePick, rejectRescuePick, submitRescuePick, addLamportEvent, syncLamportEvents,
+      checkPoiFingerprint, runPurgeWorker
     }}>
       {children}
     </AppContext.Provider>

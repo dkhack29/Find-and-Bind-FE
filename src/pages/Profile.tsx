@@ -20,7 +20,10 @@ export default function Profile() {
     featureFlags, updateFeatureFlags, apiQuota, incrementQuota,
     avoidList, removeFromAvoidList, tasteCollections, addTasteCollection,
     savedPlacesCollection, savePlaceToCollection, merchantWalletBalance,
-    updateMerchantWallet, appeals, submitAppeal
+    updateMerchantWallet, appeals, submitAppeal,
+
+    // Phase 2 Context
+    legalHoldActive, setLegalHoldActive, purgeLogs, runPurgeWorker, checkPoiFingerprint
   } = useAppContext();
 
   const navigate = useNavigate();
@@ -674,6 +677,144 @@ export default function Profile() {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Phase 2 Systems Control Hub (Admin only) */}
+        {role === 'admin' && (
+          <div>
+            <h3 className="font-bold text-lg text-slate-900 mb-4 flex items-center gap-1.5">
+              <Shield className="text-purple-600 animate-pulse" size={20} />
+              Bảng quản trị Hệ thống P2 (Admin Only)
+            </h3>
+            
+            <div className="bg-white rounded-[24px] p-5 border border-slate-100 space-y-6 shadow-sm text-left mb-6">
+              
+              {/* GDPR Legal Hold & Auto Purge Worker */}
+              <div>
+                <div className="flex justify-between items-center mb-3">
+                  <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1">
+                    <Database size={14} /> GDPR & NĐ13 Auto-Purge Worker
+                  </h4>
+                  <span className="bg-purple-50 text-purple-600 text-[8.5px] font-black uppercase px-2 py-0.5 rounded border border-purple-100">
+                    Tuân thủ
+                  </span>
+                </div>
+
+                <p className="text-[10px] text-slate-500 font-semibold mb-4 leading-relaxed">
+                  Tự động dọn dẹp Rescue Picks quá hạn (&gt;14 ngày) và dữ liệu tài khoản đã bị yêu cầu xóa.
+                </p>
+
+                {/* Legal Hold Switch */}
+                <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-4">
+                  <div>
+                    <h5 className="font-bold text-slate-800 text-xs leading-none mb-1 flex items-center gap-1">
+                      <Scale size={14} className="text-indigo-600" />
+                      Kích hoạt Chế độ Hoãn Hủy (Legal Hold)
+                    </h5>
+                    <p className="text-[9px] text-slate-400 font-medium mt-1">Dừng tất cả các hoạt động xóa dữ liệu để phục vụ điều tra/pháp lý</p>
+                  </div>
+                  <button 
+                    onClick={() => setLegalHoldActive(!legalHoldActive)}
+                    className={cn(
+                      "w-12 h-6 rounded-full p-1 transition-colors duration-300",
+                      legalHoldActive ? "bg-amber-500 text-right" : "bg-slate-200 text-left"
+                    )}
+                  >
+                    <div className={cn("w-4 h-4 rounded-full bg-white transition-all duration-300", legalHoldActive ? "translate-x-6" : "")}></div>
+                  </button>
+                </div>
+
+                {/* Trigger Worker */}
+                <div className="flex gap-2 mb-4">
+                  <button
+                    onClick={() => {
+                      runPurgeWorker();
+                      alert("Đã kích hoạt Worker dọn dẹp dữ liệu tự động!");
+                    }}
+                    className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-black uppercase rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw size={12} /> Chạy Purge Worker
+                  </button>
+                </div>
+
+                {/* Purge Logs display */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 h-28 overflow-y-auto no-scrollbar font-mono text-[9px] text-slate-600 space-y-1">
+                  <div className="text-[8.5px] font-bold text-slate-400 border-b border-slate-200 pb-1 mb-1">LOG NHẬT KÝ BẢO TRÌ HỆ THỐNG</div>
+                  {purgeLogs.map((log: string, idx: number) => (
+                    <div key={idx} className={cn(
+                      "leading-relaxed",
+                      log.includes("[WARNING]") ? "text-amber-600 font-bold" :
+                      log.includes("[SUCCESS]") ? "text-green-600" : "text-slate-500"
+                    )}>{log}</div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="h-[1px] bg-slate-100" />
+
+              {/* POI Rebranding Fingerprint Simulator */}
+              <div>
+                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Fingerprint size={14} className="text-rose-500" />
+                  Hệ thống Chống ve sầu thoát xác (POI Fingerprinting)
+                </h4>
+                <p className="text-[10px] text-slate-500 font-semibold mb-4 leading-relaxed">
+                  Ngăn chặn cơ sở vi phạm đổi tên để lách lệnh cấm bằng cách so khớp khoảng cách GPS, mã số thuế và cấu trúc thiết kế của quán.
+                </p>
+
+                <div className="space-y-3 bg-slate-50 p-4 border border-slate-200 rounded-2xl">
+                  <div>
+                    <label className="block text-[8.5px] font-bold text-slate-400 uppercase mb-1">Mô phỏng Đăng ký POI Mới:</label>
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      <div>
+                        <span className="text-[8px] text-slate-400 block font-bold">Mã số Thuế (MST)</span>
+                        <input
+                          type="text"
+                          id="taxIdSim"
+                          placeholder="Nhập MST..."
+                          defaultValue="MST-9999"
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-semibold text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[8px] text-slate-400 block font-bold">Cự ly GPS (mét)</span>
+                        <input
+                          type="number"
+                          id="distSim"
+                          placeholder="Khoảng cách..."
+                          defaultValue={35}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-semibold text-slate-800"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      const taxId = (document.getElementById('taxIdSim') as HTMLInputElement)?.value || 'MST-9999';
+                      const dist = Number((document.getElementById('distSim') as HTMLInputElement)?.value || 35);
+                      
+                      const matchResult = checkPoiFingerprint({
+                        taxId,
+                        gpsDistance: dist,
+                        layoutHash: "hash_structure_99" // matching blacklisted layout structure
+                      });
+
+                      if (matchResult.matchedBanned) {
+                        alert(`⚠️ CẢNH BÁO GIAN LẬN THOÁT XÁC!\nTrùng khớp địa điểm đen: ${matchResult.matchedFingerprint?.reason}\nĐộ tương đồng: ${matchResult.confidence * 100}%`);
+                      } else {
+                        alert(`✓ POI Fingerprint An Toàn!\nĐộ tương đồng với danh sách đen: ${matchResult.confidence * 100}%. Cho phép tạo mới.`);
+                      }
+                    }}
+                    className="w-full py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black uppercase active:scale-95 transition-all cursor-pointer"
+                  >
+                    Kiểm tra Fingerprint
+                  </button>
+                </div>
+              </div>
+
             </div>
           </div>
         )}
