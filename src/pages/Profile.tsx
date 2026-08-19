@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { cn } from '../App';
 import { userService } from '@/services/user/userApi'
 import AddPlaceModal from '../components/AddPlaceModal';
+import AuthForm from '../components/AuthForm';
 
 const GetMyProfile = async () => {
   try {
@@ -207,51 +208,10 @@ export default function Profile() {
     return (
       <motion.div 
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="h-full bg-slate-50 flex items-center justify-center p-6"
+        className="h-full bg-slate-50 flex items-center justify-center p-4 overflow-y-auto no-scrollbar"
       >
-        <div className="bg-white w-full max-w-sm rounded-[32px] p-8 shadow-soft border border-slate-100 text-center">
-          <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mx-auto mb-6 border border-indigo-100">
-            <User size={32} />
-          </div>
-          <h2 className="text-2xl font-black text-slate-900 mb-2">Đăng nhập tài khoản</h2>
-          <p className="text-xs text-slate-500 font-semibold mb-8 leading-relaxed">
-            Đăng nhập để đồng bộ kế hoạch, lưu địa điểm yêu thích và nhận đánh giá thực tế.
-          </p>
-
-          <form onSubmit={handleLoginSubmit} className="space-y-4 text-left">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Địa chỉ Email</label>
-              <input 
-                type="email" 
-                required
-                placeholder="tenban@example.com"
-                value={emailInput}
-                onChange={e => setEmailInput(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
-              />
-            </div>
-
-            {/* Cloudflare Turnstile */}
-            <div className="py-2 flex justify-center">
-              <Turnstile 
-                siteKey={(import.meta as any).env.VITE_CLOUDFLARE_SITE_KEY || "0x4AAAAAAADvU3189MDItU1nP"}
-                onSuccess={(token) => setCaptchaToken(token)}
-                onExpire={() => setCaptchaToken(null)}
-                onError={() => {
-                  setCaptchaToken(null);
-                  alert("Lỗi tải Captcha. Vui lòng tải lại trang.");
-                }}
-              />
-            </div>
-
-            <button 
-              type="submit"
-              disabled={!captchaToken}
-              className="w-full py-4 bg-indigo-600 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/10 active:scale-95 transition-transform disabled:transform-none disabled:shadow-none"
-            >
-              Tiếp tục
-            </button>
-          </form>
+        <div className="w-full py-8">
+          <AuthForm />
         </div>
       </motion.div>
     );
@@ -270,10 +230,29 @@ export default function Profile() {
           </div>
         </div>
         <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center justify-center gap-1.5">
-          {user.email?.split('@')[0]}
+          {user.name || user.email?.split('@')[0]}
           {user.isVerifiedL3 && <ShieldCheck className="text-indigo-600" size={20} />}
         </h2>
         <p className="text-slate-400 font-bold text-[10px] mt-0.5 mb-2 uppercase tracking-widest">{user.email}</p>
+
+        {/* User Details Chips (SĐT, Giới tính, Phương thức Đăng ký/Đăng nhập) */}
+        <div className="flex flex-wrap items-center justify-center gap-2 mb-4">
+          {user.phone && (
+            <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-slate-200">
+              SĐT: {user.phone}
+            </span>
+          )}
+          {user.gender && (
+            <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-slate-200">
+              Giới tính: {user.gender}
+            </span>
+          )}
+          {user.authMethod && (
+            <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-indigo-100 uppercase">
+              {user.authMethod === 'google' ? 'Đăng nhập Google' : user.authMethod === 'apple' ? 'Đăng nhập Apple' : 'Đăng ký Gmail'}
+            </span>
+          )}
+        </div>
 
         {/* eKYC L3 Status Bar Widget */}
         {user.isVerifiedL3 ? (
