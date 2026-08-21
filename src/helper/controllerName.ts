@@ -1,6 +1,6 @@
 const controller = Object.freeze({
   UserProfile: "User",
-  Authentication: "Authentication",
+  Authentication: "Authetication",
   category: "Category",
   Itinerary: "Itinerary",
   Location: "Location",
