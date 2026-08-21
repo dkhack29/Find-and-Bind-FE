@@ -9,8 +9,20 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAppContext } from '../context/AppContext';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../App';
+import { userService } from '@/services/user/userApi'
 import AddPlaceModal from '../components/AddPlaceModal';
 import AuthForm from '../components/AuthForm';
+
+const GetMyProfile = async () => {
+  try {
+    const res = await userService.getMyProfile();
+    if (res.success && res.data) {
+      console.log(res.data);
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
 
 export default function Profile() {
   const { 

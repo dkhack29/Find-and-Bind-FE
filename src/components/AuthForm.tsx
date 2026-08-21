@@ -4,16 +4,19 @@ import { Turnstile } from '@marsidev/react-turnstile';
 import { 
   User, Mail, Phone, Lock, Eye, EyeOff, ShieldCheck, 
   ArrowRight, Clock, RefreshCw, AlertCircle, CheckCircle2, 
-  Sparkles, ChevronLeft, CheckSquare, Square
+  Sparkles, ChevronLeft, CheckSquare, Square, KeyRound
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { cn } from '../App';
+import { authService } from '../services/authentication/authApi';
+import type { LoginDto, RegisterRequestDto } from '../services/authentication/authType';
 
 interface OtpState {
   email: string;
   name: string;
   phone: string;
   gender: string;
+  password?: string;
   otpCode: string;
   expiresAt: number; // Unix timestamp in ms
 }
@@ -23,8 +26,8 @@ const STORAGE_KEY_OTP = 'find_bind_otp_pending_session';
 export default function AuthForm({ onSuccess }: { onSuccess?: () => void }) {
   const { login } = useAppContext();
 
-  // Mode: 'login' | 'register' | 'otp'
-  const [mode, setMode] = useState<'login' | 'register' | 'otp'>('login');
+  // Mode: 'login' | 'register' | 'otp' | 'forgot'
+  const [mode, setMode] = useState<'login' | 'register' | 'otp' | 'forgot'>('login');
 
   // Login Form State
   const [loginEmail, setLoginEmail] = useState('');
@@ -32,6 +35,13 @@ export default function AuthForm({ onSuccess }: { onSuccess?: () => void }) {
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginCaptchaVerified, setLoginCaptchaVerified] = useState(false);
   const [loginErrors, setLoginErrors] = useState<{ email?: string; password?: string; captcha?: string; general?: string }>({});
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Forgot Password State
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotError, setForgotError] = useState<string | null>(null);
+  const [forgotSuccessMsg, setForgotSuccessMsg] = useState<string | null>(null);
+  const [isSubmittingForgot, setIsSubmittingForgot] = useState(false);
 
   // Register Form State
   const [regName, setRegName] = useState('');
@@ -113,7 +123,7 @@ export default function AuthForm({ onSuccess }: { onSuccess?: () => void }) {
   };
 
   // Submit Login
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const errors: { email?: string; password?: string; captcha?: string; general?: string } = {};
 
@@ -139,9 +149,58 @@ export default function AuthForm({ onSuccess }: { onSuccess?: () => void }) {
     }
 
     setLoginErrors({});
-    // Success login
-    login(loginEmail.trim(), undefined, undefined, undefined, 'email');
-    if (onSuccess) onSuccess();
+    setIsLoggingIn(true);
+
+    try {
+      const loginPayload: LoginDto = {
+        email: loginEmail.trim(),
+        password: loginPassword,
+      };
+      const res = await authService.login(loginPayload);
+
+      if (res && (res.success || res.data)) {
+        login(loginEmail.trim(), undefined, undefined, undefined, 'email');
+        if (onSuccess) onSuccess();
+      } else {
+        setLoginErrors({ general: res?.message || 'Đăng nhập không thành công. Vui lòng thử lại!' });
+      }
+    } catch (err: any) {
+      const errorMsg = err?.response?.data?.message || err?.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại email và mật khẩu!';
+      setLoginErrors({ general: errorMsg });
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  // Submit Forgot Password
+  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError(null);
+    setForgotSuccessMsg(null);
+
+    if (!forgotEmail.trim()) {
+      setForgotError('Vui lòng nhập địa chỉ Gmail.');
+      return;
+    } else if (!validateEmail(forgotEmail)) {
+      setForgotError('Vui lòng nhập địa chỉ Gmail hợp lệ.');
+      return;
+    }
+
+    setIsSubmittingForgot(true);
+
+    try {
+      const res = await authService.forgotPassword(forgotEmail.trim());
+      if (res && (res.success || res.data)) {
+        setForgotSuccessMsg('Hướng dẫn khôi phục mật khẩu đã được gửi đến Gmail của bạn!');
+      } else {
+        setForgotError(res?.message || 'Gửi yêu cầu thất bại. Vui lòng thử lại!');
+      }
+    } catch (err: any) {
+      const errorMsg = err?.response?.data?.message || err?.message || 'Gửi yêu cầu thất bại. Vui lòng thử lại!';
+      setForgotError(errorMsg);
+    } finally {
+      setIsSubmittingForgot(false);
+    }
   };
 
   // Submit Register
@@ -194,6 +253,7 @@ export default function AuthForm({ onSuccess }: { onSuccess?: () => void }) {
       name: regName.trim(),
       phone: regPhone.trim(),
       gender: regGender,
+      password: regPassword,
       otpCode: generatedOtp,
       expiresAt
     };
@@ -233,7 +293,7 @@ export default function AuthForm({ onSuccess }: { onSuccess?: () => void }) {
   };
 
   // Handle OTP Code Verification
-  const handleVerifyOtp = (fullCode?: string) => {
+  const handleVerifyOtp = async (fullCode?: string) => {
     const codeToVerify = fullCode || otpInput.join('');
 
     if (remainingSeconds <= 0) {
@@ -249,24 +309,37 @@ export default function AuthForm({ onSuccess }: { onSuccess?: () => void }) {
     setIsVerifyingOtp(true);
     setOtpError(null);
 
-    setTimeout(() => {
-      if (!otpSession) {
-        setIsVerifyingOtp(false);
-        return;
-      }
+    if (!otpSession) {
+      setIsVerifyingOtp(false);
+      return;
+    }
 
-      if (codeToVerify === otpSession.otpCode) {
+    if (codeToVerify !== otpSession.otpCode) {
+      setOtpError('Mã OTP nhập không chính xác! Vui lòng thử lại.');
+      setIsVerifyingOtp(false);
+      return;
+    }
+
+    try {
+      const registerPayload: RegisterRequestDto = {
+        email: otpSession.email,
+        password: otpSession.password || '',
+      };
+      const res = await authService.register(registerPayload);
+
+      if (res && (res.success || res.data)) {
         localStorage.removeItem(STORAGE_KEY_OTP);
-
         login(otpSession.email, otpSession.name, otpSession.phone, otpSession.gender, 'email');
-        setIsVerifyingOtp(false);
-
         if (onSuccess) onSuccess();
       } else {
-        setOtpError('Mã OTP nhập không chính xác! Vui lòng thử lại.');
-        setIsVerifyingOtp(false);
+        setOtpError(res?.message || 'Đăng ký không thành công. Vui lòng thử lại!');
       }
-    }, 800);
+    } catch (err: any) {
+      const errorMsg = err?.response?.data?.message || err?.message || 'Đăng ký thất bại. Vui lòng thử lại!';
+      setOtpError(errorMsg);
+    } finally {
+      setIsVerifyingOtp(false);
+    }
   };
 
   // Social Login Handler
@@ -328,7 +401,7 @@ export default function AuthForm({ onSuccess }: { onSuccess?: () => void }) {
     <div className="w-full max-w-md bg-white rounded-[32px] p-6 sm:p-8 shadow-soft border border-slate-100 relative overflow-hidden">
       
       {/* Header section */}
-      {mode !== 'otp' && (
+      {mode !== 'otp' && mode !== 'forgot' && (
         <div className="text-center mb-6">
           <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mx-auto mb-4 border border-indigo-100 shadow-sm">
             <Sparkles size={28} />
@@ -452,6 +525,22 @@ export default function AuthForm({ onSuccess }: { onSuccess?: () => void }) {
                   <AlertCircle size={12} /> {loginErrors.password}
                 </p>
               )}
+
+              {/* Forgot Password Link */}
+              <div className="flex justify-end mt-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('forgot');
+                    setForgotEmail(loginEmail);
+                    setForgotError(null);
+                    setForgotSuccessMsg(null);
+                  }}
+                  className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+                >
+                  Quên mật khẩu?
+                </button>
+              </div>
             </div>
 
             {/* Cloudflare Turnstile Captcha Verification Widget */}
@@ -487,9 +576,18 @@ export default function AuthForm({ onSuccess }: { onSuccess?: () => void }) {
             {/* Submit Button */}
             <button
               type="submit"
-              className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/20 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2 mt-3"
+              disabled={isLoggingIn}
+              className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/20 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2 mt-3"
             >
-              Đăng nhập <ArrowRight size={18} />
+              {isLoggingIn ? (
+                <>
+                  <RefreshCw size={18} className="animate-spin" /> Đang đăng nhập...
+                </>
+              ) : (
+                <>
+                  Đăng nhập <ArrowRight size={18} />
+                </>
+              )}
             </button>
 
             {/* Divider */}
@@ -529,6 +627,84 @@ export default function AuthForm({ onSuccess }: { onSuccess?: () => void }) {
                 Apple
               </button>
             </div>
+          </motion.form>
+        )}
+
+        {/* FORGOT PASSWORD FORM */}
+        {mode === 'forgot' && (
+          <motion.form
+            key="forgot-form"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            onSubmit={handleForgotPasswordSubmit}
+            className="space-y-4 text-left"
+          >
+            <button
+              type="button"
+              onClick={() => setMode('login')}
+              className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer mb-2"
+            >
+              <ChevronLeft size={16} /> Quay lại đăng nhập
+            </button>
+
+            <div className="text-center mb-4">
+              <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mx-auto mb-2 border border-indigo-100 shadow-sm">
+                <KeyRound size={24} />
+              </div>
+              <h3 className="text-xl font-black text-slate-900">Quên mật khẩu</h3>
+              <p className="text-xs text-slate-500 font-semibold mt-1">
+                Nhập Gmail của bạn để nhận hướng dẫn đặt lại mật khẩu
+              </p>
+            </div>
+
+            {forgotSuccessMsg && (
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 p-3 rounded-2xl text-xs font-semibold flex items-center gap-2">
+                <CheckCircle2 size={16} className="shrink-0 text-emerald-600" />
+                <span>{forgotSuccessMsg}</span>
+              </div>
+            )}
+
+            {forgotError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-2xl text-xs font-semibold flex items-start gap-2">
+                <AlertCircle size={16} className="shrink-0 text-red-500 mt-0.5" />
+                <span>{forgotError}</span>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                Địa chỉ Gmail
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                  <Mail size={18} />
+                </div>
+                <input
+                  type="email"
+                  placeholder="findandbind@gmail.com"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmittingForgot}
+              className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/20 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
+            >
+              {isSubmittingForgot ? (
+                <>
+                  <RefreshCw size={18} className="animate-spin" /> Đang gửi yêu cầu...
+                </>
+              ) : (
+                <>
+                  Gửi mã khôi phục <ArrowRight size={18} />
+                </>
+              )}
+            </button>
           </motion.form>
         )}
 
