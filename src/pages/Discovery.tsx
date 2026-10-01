@@ -44,17 +44,36 @@ function RescueCountdown({ expiryDate }: { expiryDate: string }) {
   );
 }
 
-const CATEGORIES = ["Tất cả", "Thiên nhiên", "Bãi biển", "Thành phố", "Nghỉ dưỡng", "Văn hóa"];
+function removeVietnameseTones(str: string) {
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .trim();
+}
+
+const DEFAULT_CATEGORIES = ["Tất cả", "Quán cà phê", "Nhà hàng", "Khách sạn", "Điểm du lịch", "Khu vui chơi", "Trung tâm mua sắm", "Bảo tàng", "Công viên"];
 
 export default function Discovery() {
-  const { places, rescuePicks } = useAppContext();
+  const { places, rescuePicks, categories } = useAppContext();
   const [activeCategory, setActiveCategory] = useState("Tất cả");
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
 
+  const categoryList = categories && categories.length > 0
+    ? ["Tất cả", ...categories.map(c => c.name)]
+    : DEFAULT_CATEGORIES;
+
   const filteredPlaces = places.filter(p => {
-    const matchesSearch = p.title.toLowerCase().includes(search.toLowerCase()) || p.tag.toLowerCase().includes(search.toLowerCase());
-    const matchesCat = activeCategory === "Tất cả" || p.tag.includes(activeCategory);
+    const rawSearch = search.trim();
+    const matchesSearch = !rawSearch || 
+      removeVietnameseTones(p.title).includes(removeVietnameseTones(rawSearch)) ||
+      removeVietnameseTones(p.tag).includes(removeVietnameseTones(rawSearch)) ||
+      removeVietnameseTones(p.location).includes(removeVietnameseTones(rawSearch));
+    const matchesCat = activeCategory === "Tất cả" || 
+      removeVietnameseTones(p.tag).includes(removeVietnameseTones(activeCategory));
     return matchesSearch && matchesCat;
   });
 
@@ -137,8 +156,8 @@ export default function Discovery() {
                 <p className="text-[9px] text-slate-400 font-medium mt-1">Đạt chuẩn tuần tự đề xuất (Yêu cầu &ge;20%, Rating &ge;4.2)</p>
               </div>
               
-              <div className="w-full md:w-36 h-12">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="w-full md:w-36 h-12 min-w-[120px] min-h-[48px]">
+                <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={48}>
                   <AreaChart data={LOTW_GROWTH_DATA}>
                     <defs>
                       <linearGradient id="colorVisits" x1="0" y1="0" x2="0" y2="1">
@@ -217,7 +236,7 @@ export default function Discovery() {
 
         {/* Categories */}
         <div className="flex gap-2 overflow-x-auto no-scrollbar mb-8 -mx-6 px-6">
-          {CATEGORIES.map(cat => (
+          {categoryList.map(cat => (
             <button 
               key={cat} 
               onClick={() => setActiveCategory(cat)}

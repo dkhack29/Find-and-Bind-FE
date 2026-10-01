@@ -33,3 +33,9 @@ export interface ReviewFilterDto {
   pageIndex?: number; // default 1
   pageSize?: number; // default 10
 }
+
+/** Thống kê đánh giá — GET /api/Review/location/{locationId}/stats */
+export interface ReviewStatsDto {
+  totalCount: number;
+  averageRating: number;
+}

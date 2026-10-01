@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Sparkles, Calendar, MapPin, PlusSquare, Camera, SlidersHorizontal, Navigation, AlertTriangle, ArrowRight, WifiOff, RefreshCw, Layers, Check, Users, Edit3 } from 'lucide-react';
+import { ChevronLeft, Sparkles, Calendar, MapPin, PlusSquare, Camera, SlidersHorizontal, Navigation, AlertTriangle, ArrowRight, WifiOff, RefreshCw, Layers, Check, Users, Edit3, Eye } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { cn } from '../App';
+import ItineraryDetailModal from '../components/planner/ItineraryDetailModal';
 
 export default function TripDetail() {
   const { id } = useParams();
@@ -31,6 +32,7 @@ export default function TripDetail() {
 
   // Filter View mode (Collaborative vs Personal) (FR-15)
   const [viewMode, setViewMode] = useState<'all' | 'personal'>('all');
+  const [showItineraryModal, setShowItineraryModal] = useState(false);
 
   const trip = trips.find(t => t.id === Number(id)) || trips[0];
 
@@ -350,11 +352,27 @@ export default function TripDetail() {
 
         {/* Itinerary */}
         <div className="space-y-8">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-black text-slate-900 text-lg tracking-tight">Chi tiết từng ngày</h3>
+            <button
+              onClick={() => setShowItineraryModal(true)}
+              className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-xs"
+            >
+              <Eye size={13} />
+              <span>Xem dạng Popup</span>
+            </button>
+          </div>
+
           {trip.itinerary?.length === 0 && <p className="text-slate-500 text-sm text-center">Chưa có lịch trình.</p>}
           {trip.itinerary?.map((day, idx) => {
+            const rawItems = day.items || (day.activities || []).map(a => ({ 
+              time: a.time, 
+              act: `${a.location ? a.location + ' - ' : ''}${a.description}`, 
+              type: a.isVerified ? 'activity' : 'activity' 
+            }));
             const displayedItems = viewMode === 'personal'
-              ? day.items.filter((_, i) => i % 2 === 0) // Mock: show subset of edits for personal view
-              : day.items;
+              ? rawItems.filter((_, i) => i % 2 === 0)
+              : rawItems;
 
             return (
               <div key={idx}>
@@ -617,6 +635,17 @@ export default function TripDetail() {
                </div>
              </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Detailed Itinerary Modal */}
+      <AnimatePresence>
+        {showItineraryModal && (
+          <ItineraryDetailModal
+            isOpen={showItineraryModal}
+            onClose={() => setShowItineraryModal(false)}
+            trip={trip}
+          />
         )}
       </AnimatePresence>
     </motion.div>

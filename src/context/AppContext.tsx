@@ -1,4 +1,9 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import Cookies from 'js-cookie';
+import { locationService } from '@/services/location/locationApi';
+import { itineraryService } from '@/services/itinerary/itineraryApi';
+import { userService } from '@/services/user/userApi';
+import type { CategoryDto } from '@/services/location/locationType';
 
 export type Role = 'user' | 'merchant' | 'admin' | 'moderator';
 
@@ -34,11 +39,27 @@ export type Place = {
   ownerId?: string;
   lat?: number; // Phase 1: GPS coordination
   lon?: number; // Phase 1: GPS coordination
+  categoryId?: number;
+  categoryName?: string;
   isSponsored?: boolean; // Phase 1: Sponsored ad marker
 };
 
+export type TripActivity = {
+  time: string;
+  endTime?: string;
+  location: string;
+  description: string;
+  matchedLocationId?: number | null;
+  isVerified?: boolean;
+};
+
 export type TripItem = { time: string; act: string; type: string; };
-export type TripDay = { day: number; title: string; items: TripItem[]; };
+export type TripDay = { 
+  day: number; 
+  title: string; 
+  items?: TripItem[]; 
+  activities?: TripActivity[];
+};
 export type Trip = {
   id: number; name: string; date: string; location: string; status: string; days: number; itinerary: TripDay[];
 };
@@ -261,10 +282,104 @@ const INITIAL_PLACES: Place[] = [
 ];
 
 const INITIAL_TRIPS: Trip[] = [
-  { 
-    id: 1, name: "Thái Lan 4N3Đ", date: "15 - 18 Tháng 6, 2024", location: "Bangkok", status: "Sắp tới", days: 4,
+  {
+    id: 1,
+    name: "Khám phá Biên Hòa - Đồng Nai",
+    date: "22 - 23 Tháng 9, 2026",
+    location: "Biên Hòa, Đồng Nai",
+    status: "Đang diễn ra",
+    days: 2,
     itinerary: [
-      { day: 1, title: "Đến nơi & Khám phá trung tâm", items: [ { time: "09:00", act: "Đến tại khách sạn & Gửi hành lý", type: "logistic" } ] }
+      {
+        day: 1,
+        title: "Văn hóa & Ẩm thực Cổ truyền Biên Hòa",
+        activities: [
+          {
+            time: "07:30",
+            location: "Chợ Biên Hòa",
+            description: "Thưởng thức điểm tâm sáng bình dân với các món đặc sản địa phương như bánh mì, xôi hoặc bún riêu tại khu vực chợ cổ lâu đời nhất thành phố.",
+            matchedLocationId: 5,
+            isVerified: true
+          },
+          {
+            time: "08:30",
+            location: "Văn Miếu Trấn Biên",
+            description: "Tìm hiểu về trung tâm văn hóa giáo dục đầu tiên của vùng đất Đàng Trong. Nơi đây có kiến trúc cổ kính, không gian xanh mát, rất phù hợp để khám phá lịch sử và chụp ảnh cùng bạn bè.",
+            matchedLocationId: 7,
+            isVerified: true
+          },
+          {
+            time: "10:30",
+            location: "Thất Phủ Cổ Miếu (Chùa Ông)",
+            description: "Ghé thăm ngôi chùa cổ nhất vùng Nam Bộ nằm ở Cù lao Phố, nơi lưu giữ sự giao thoa văn hóa độc đáo giữa người Việt và người Hoa qua các đường nét điêu khắc tinh xảo.",
+            matchedLocationId: null,
+            isVerified: false
+          },
+          {
+            time: "12:00",
+            location: "Quán Lẩu Tôm 5 Ri (Đường Cách Mạng Tháng 8)",
+            description: "Thưởng thức món lẩu tôm nổi tiếng lâu đời tại Biên Hòa với hương vị đậm đà, giá cả hợp lý khi đi nhóm đông người.",
+            matchedLocationId: null,
+            isVerified: false
+          },
+          {
+            time: "19:00",
+            location: "Chợ đêm Biên Hòa & Công viên bờ sông Đồng Nai",
+            description: "Đi dạo hóng mát dọc bờ sông Đồng Nai, khám phá không gian sinh hoạt buổi tối sôi động của người dân địa phương trước khi kết thúc chuyến đi.",
+            matchedLocationId: null,
+            isVerified: false
+          }
+        ],
+        items: [
+          { time: "07:30", act: "Chợ Biên Hòa - Ăn sáng đặc sản", type: "food" },
+          { time: "08:30", act: "Văn Miếu Trấn Biên - Khám phá lịch sử", type: "explore" },
+          { time: "10:30", act: "Thất Phủ Cổ Miếu - Chiêm bái chùa cổ", type: "explore" },
+          { time: "12:00", act: "Quán Lẩu Tôm 5 Ri - Ăn trưa", type: "food" },
+          { time: "19:00", act: "Chợ đêm & Bờ sông Đồng Nai - Dạo mát", type: "explore" }
+        ]
+      },
+      {
+        day: 2,
+        title: "Sinh thái & Danh lam Thắng cảnh",
+        activities: [
+          {
+            time: "08:00",
+            location: "Khu Du Lịch Bửu Long",
+            description: "Được mệnh danh là 'Vịnh Hạ Long thu nhỏ' của miền Đông Nam Bộ với hồ nước trong xanh, vách đá kỳ vĩ và nhiều góc check-in tuyệt đẹp.",
+            matchedLocationId: 8,
+            isVerified: true
+          },
+          {
+            time: "14:00",
+            location: "Làng Bưởi Tân Triều",
+            description: "Thưởng thức đặc sản bưởi đường lá cam, gỏi bưởi và rượu bưởi nức tiếng trong không gian miệt vườn rợp bóng mát.",
+            matchedLocationId: null,
+            isVerified: false
+          }
+        ],
+        items: [
+          { time: "08:00", act: "KDL Bửu Long - Check-in thắng cảnh", type: "explore" },
+          { time: "14:00", act: "Làng Bưởi Tân Triều - Đặc sản miệt vườn", type: "food" }
+        ]
+      }
+    ]
+  },
+  { 
+    id: 2, 
+    name: "Thái Lan 4N3Đ", 
+    date: "15 - 18 Tháng 6, 2024", 
+    location: "Bangkok", 
+    status: "Sắp tới", 
+    days: 4,
+    itinerary: [
+      { 
+        day: 1, 
+        title: "Đến nơi & Khám phá trung tâm", 
+        activities: [
+          { time: "09:00", location: "Khách sạn Bangkok", description: "Đến tại khách sạn & Gửi hành lý", isVerified: true }
+        ],
+        items: [ { time: "09:00", act: "Đến tại khách sạn & Gửi hành lý", type: "logistic" } ] 
+      }
     ]
   }
 ];
@@ -313,6 +428,12 @@ type AppContextType = {
   submitAppeal: (appeal: Omit<Appeal, 'id' | 'status'>) => void;
   updateAppealStatus: (id: string, status: 'approved' | 'rejected') => void;
   verifyEkycL3: (hash: string) => void;
+
+  // Backend Sync & State
+  categories: CategoryDto[];
+  refreshPlaces: () => Promise<void>;
+  refreshCategories: () => Promise<void>;
+  refreshTrips: () => Promise<void>;
 
   // Phase 2 Features States
   rescuePicks: RescuePick[];
@@ -434,6 +555,124 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [lamportEvents, setLamportEvents] = useState<LamportEvent[]>(INITIAL_LAMPORT_EVENTS);
   const [legalHoldActive, setLegalHoldActive] = useState<boolean>(false);
   const [purgeLogs, setPurgeLogs] = useState<string[]>([]);
+
+  const [categories, setCategories] = useState<CategoryDto[]>([]);
+
+  const refreshCategories = async () => {
+    try {
+      const res = await locationService.getAllCategories();
+      if (res?.data && Array.isArray(res.data) && res.data.length > 0) {
+        setCategories(res.data);
+      }
+    } catch (err) {
+      console.log('Fetch categories error:', err);
+    }
+  };
+
+  const refreshPlaces = async () => {
+    try {
+      const res = await locationService.getAll({ pageIndex: 1, pageSize: 50 });
+      if (res?.data && Array.isArray(res.data) && res.data.length > 0) {
+        const gradients = [
+          'bg-gradient-nature', 'bg-gradient-sunset', 'bg-gradient-ocean', 
+          'bg-gradient-berry', 'bg-gradient-lavender', 'bg-gradient-mint'
+        ];
+        const serverPlaces: Place[] = res.data.map(item => {
+          const existing = INITIAL_PLACES.find(p => p.id === item.id);
+          return {
+            id: item.id,
+            title: item.name,
+            tag: item.categoryName || 'Địa điểm nổi bật',
+            rating: item.averageRating > 0 ? Number(item.averageRating.toFixed(1)) : 4.5,
+            reviewsCount: existing?.reviewsCount || (Math.floor(item.id * 17) % 80 + 12),
+            imageClass: existing?.imageClass || gradients[item.id % gradients.length],
+            location: item.address,
+            description: existing?.description || `Địa điểm ${item.name} tại ${item.address}. Không gian đẹp, dịch vụ uy tín.`,
+            reasons: existing?.reasons || ['Điểm đến được nhiều người yêu thích', 'Chất lượng phục vụ tốt', 'Vị trí thuận tiện'],
+            price: existing?.price || 'Liên hệ',
+            priceConfidence: existing?.priceConfidence || 90,
+            openingHours: existing?.openingHours || '07:00 - 22:00',
+            openingHoursConfidence: existing?.openingHoursConfidence || 95,
+            trustScore: existing?.trustScore || 88,
+            riskLevel: existing?.riskLevel || 'Bình thường',
+            riskReasons: existing?.riskReasons || ['Giá cả niêm yết rõ ràng'],
+            lat: item.latitude || existing?.lat || 10.9508,
+            lon: item.longitude || existing?.lon || 106.8241,
+            categoryId: item.categoryId,
+            categoryName: item.categoryName
+          };
+        });
+
+        setPlaces(prev => {
+          const mapById = new Map<number, Place>();
+          serverPlaces.forEach(p => mapById.set(p.id, p));
+          prev.forEach(p => {
+            if (!mapById.has(p.id)) mapById.set(p.id, p);
+          });
+          return Array.from(mapById.values());
+        });
+      }
+    } catch (err) {
+      console.log('Fetch places error:', err);
+    }
+  };
+
+  const refreshTrips = async () => {
+    const token = Cookies.get('accessToken');
+    if (!token) return;
+    try {
+      const res = await itineraryService.getAll({ pageIndex: 1, pageSize: 20 });
+      if (res?.data && Array.isArray(res.data) && res.data.length > 0) {
+        const mappedTrips: Trip[] = res.data.map(t => ({
+          id: t.id,
+          name: t.title,
+          date: t.startDate ? new Date(t.startDate).toLocaleDateString('vi-VN') : 'Sắp tới',
+          location: t.title.replace(/^Khám phá\s*/i, '') || 'Việt Nam',
+          status: 'Sắp tới',
+          days: t.totalDays || 3,
+          itinerary: [
+            { day: 1, title: 'Lộ trình', items: [{ time: '08:00', act: `${t.totalActivities || 1} hoạt động đã lên kế hoạch`, type: 'activity' }] }
+          ]
+        }));
+        setTrips(prev => {
+          const mapById = new Map<number, Trip>();
+          mappedTrips.forEach(t => mapById.set(t.id, t));
+          prev.forEach(t => {
+            if (!mapById.has(t.id)) mapById.set(t.id, t);
+          });
+          return Array.from(mapById.values());
+        });
+      }
+    } catch (err) {
+      console.log('Fetch trips error:', err);
+    }
+  };
+
+  useEffect(() => {
+    refreshCategories();
+    refreshPlaces();
+  }, []);
+
+  useEffect(() => {
+    if (user?.loggedIn) {
+      refreshTrips();
+      userService.getMyProfile().then(res => {
+        if (res?.data) {
+          setUser(prev => ({
+            loggedIn: true,
+            email: res.data.email || prev?.email,
+            name: res.data.fullName || prev?.name,
+            avatar: res.data.avatar,
+            phone: prev?.phone,
+            gender: prev?.gender,
+            authMethod: prev?.authMethod || 'email',
+            isVerifiedL3: prev?.isVerifiedL3,
+            ekycHash: prev?.ekycHash
+          }));
+        }
+      }).catch(err => console.log('Get profile API err:', err));
+    }
+  }, [user?.loggedIn]);
 
   const updateFeatureFlags = (flags: FeatureFlags) => {
     setFeatureFlags(flags);
@@ -615,7 +854,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addPlaceWithOwner = (place: Omit<Place, 'id' | 'rating' | 'reviewsCount'> & { ownerId: string }) => {
-    setPlaces(prev => [{ ...place, id: Date.now(), rating: 5, reviewsCount: 0, lat: 10.772 + Math.random() * 0.01, lon: 106.695 + Math.random() * 0.01 }, ...prev]);
+    setPlaces(prev => [{
+      ...place,
+      id: Date.now(),
+      rating: 5,
+      reviewsCount: 0,
+      lat: place.lat !== undefined ? place.lat : (10.772 + Math.random() * 0.01),
+      lon: place.lon !== undefined ? place.lon : (106.695 + Math.random() * 0.01)
+    }, ...prev]);
   };
 
   const updateCaseStatus = (id: string, status: 'resolved' | 'rejected', reasonText: string) => {
@@ -843,6 +1089,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addReviewReply, user, login, logout, deleteAccount, privacySettings, updatePrivacySettings, cases, addCase,
       addCaseWithCoords, updateCaseStatus, updatePlaceTag, updatePlaceTrust,
       
+      // Backend Data & Sync Functions
+      categories, refreshPlaces, refreshCategories, refreshTrips,
+
       // Phase 1 States
       featureFlags, updateFeatureFlags, apiQuota, incrementQuota, avoidList, addToAvoidList, removeFromAvoidList,
       tasteCollections, addTasteCollection, savedPlacesCollection, savePlaceToCollection,

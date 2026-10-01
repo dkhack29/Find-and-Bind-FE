@@ -29,6 +29,8 @@ export interface LocationListDto {
   name: string;
   address: string;
   averageRating: number;
+  latitude?: number;
+  longitude?: number;
   categoryId: number;
   categoryName: string;
 }
@@ -41,10 +43,17 @@ export interface LocationDetailDto {
   address: string;
   averageRating: number;
   reviewCount: number;
+  latitude?: number;
+  longitude?: number;
   categoryId: number;
   categoryName: string;
   createdAt: string;
   updatedAt?: string | null;
+}
+
+/** Item địa điểm lân cận — GET /api/Location/nearby */
+export interface NearbyLocationDto extends LocationListDto {
+  distanceKm?: number;
 }
 
 /** Query params cho GET /api/Location */

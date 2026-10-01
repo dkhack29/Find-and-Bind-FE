@@ -8,6 +8,8 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppContext } from '../context/AppContext';
 import { cn } from '../App';
+import { locationService } from '@/services/location/locationApi';
+import { reviewService } from '@/services/review/reviewApi';
 
 export default function PlaceDetail() {
   const { id } = useParams();
@@ -19,8 +21,73 @@ export default function PlaceDetail() {
   } = useAppContext();
   
   const placeId = Number(id);
-  const place = places.find(p => p.id === placeId) || rescuePicks.find(p => p.id === placeId);
-  const placeReviews = reviews.filter(r => r.placeId === placeId);
+  const [serverPlace, setServerPlace] = useState<any>(null);
+  const [serverReviews, setServerReviews] = useState<any[]>([]);
+  const [reviewStats, setReviewStats] = useState<{ totalCount: number; averageRating: number } | null>(null);
+
+  const loadPlaceData = async () => {
+    if (!placeId) return;
+    try {
+      const locRes = await locationService.getById(placeId);
+      if (locRes?.data) setServerPlace(locRes.data);
+    } catch (err) {
+      console.log('Get location detail err:', err);
+    }
+
+    try {
+      const revRes = await reviewService.getByLocation(placeId, { pageIndex: 1, pageSize: 50 });
+      if (revRes?.data && Array.isArray(revRes.data)) setServerReviews(revRes.data);
+    } catch (err) {
+      console.log('Get reviews err:', err);
+    }
+
+    try {
+      const statsRes = await reviewService.getStats(placeId);
+      if (statsRes?.data) setReviewStats(statsRes.data);
+    } catch (err) {
+      console.log('Get stats err:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadPlaceData();
+  }, [placeId]);
+
+  const basePlace = places.find(p => p.id === placeId) || rescuePicks.find(p => p.id === placeId);
+  const place = serverPlace ? {
+    id: serverPlace.id,
+    title: serverPlace.name,
+    tag: serverPlace.categoryName || basePlace?.tag || 'Địa điểm nổi bật',
+    rating: reviewStats?.averageRating ? Number(reviewStats.averageRating.toFixed(1)) : (serverPlace.averageRating > 0 ? Number(serverPlace.averageRating.toFixed(1)) : (basePlace?.rating || 4.5)),
+    reviewsCount: reviewStats?.totalCount || serverPlace.reviewCount || basePlace?.reviewsCount || 15,
+    imageClass: basePlace?.imageClass || 'bg-gradient-nature',
+    location: serverPlace.address,
+    description: serverPlace.description || basePlace?.description || '',
+    reasons: basePlace?.reasons || ['Điểm đến được nhiều người yêu thích', 'Chất lượng phục vụ tốt', 'Vị trí thuận tiện'],
+    price: basePlace?.price || 'Liên hệ',
+    priceConfidence: basePlace?.priceConfidence || 90,
+    openingHours: basePlace?.openingHours || '07:00 - 22:00',
+    openingHoursConfidence: basePlace?.openingHoursConfidence || 95,
+    trustScore: basePlace?.trustScore || 88,
+    riskLevel: basePlace?.riskLevel || 'Bình thường',
+    riskReasons: basePlace?.riskReasons || ['Giá cả niêm yết rõ ràng'],
+    lat: serverPlace.latitude || basePlace?.lat || 10.9508,
+    lon: serverPlace.longitude || basePlace?.lon || 106.8241,
+  } : basePlace;
+
+  const placeReviews = [
+    ...serverReviews.map(sr => ({
+      id: `sr-${sr.id}`,
+      placeId: sr.locationId,
+      userId: `u-${sr.userProfileId}`,
+      userName: sr.userFullName || 'Khách trải nghiệm',
+      rating: sr.ratingValue,
+      comment: sr.comment || '',
+      date: sr.createdAt ? new Date(sr.createdAt).toLocaleDateString('vi-VN') : 'Gần đây',
+      verifiedVisit: true
+    })),
+    ...reviews.filter(r => r.placeId === placeId && !serverReviews.some(sr => sr.comment === r.comment))
+  ];
   
   const isSaved = savedPlaceIds.includes(placeId);
   
@@ -113,13 +180,26 @@ export default function PlaceDetail() {
     }, 1000);
   };
 
-  const handleAddReview = () => {
+  const handleAddReview = async () => {
     if (!user || !user.loggedIn) {
       alert("Vui lòng đăng nhập tại trang Cá nhân trước khi viết đánh giá!");
       navigate('/profile');
       return;
     }
     if (!newComment.trim()) return;
+
+    // Trigger real POST /api/Review
+    try {
+      await reviewService.create({
+        locationId: placeId,
+        ratingValue: newRating,
+        comment: newComment
+      });
+      loadPlaceData();
+    } catch (err) {
+      console.log('Create review API error:', err);
+    }
+
     addReview({
       placeId,
       userId: user.email || 'u1',

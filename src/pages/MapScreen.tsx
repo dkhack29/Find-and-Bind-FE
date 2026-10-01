@@ -12,6 +12,7 @@ import GpsPermissionModal from '../components/map/GpsPermissionModal';
 import { Geolocation } from '@capacitor/geolocation';
 import { useAppContext } from '../context/AppContext';
 import { cn } from '../App';
+import { locationService } from '@/services/location/locationApi';
 
 // Helper function to map OSRM step maneuvers to Lucide Icons
 const getStepIcon = (step: any) => {
@@ -113,7 +114,7 @@ const getStepInstruction = (step: any) => {
 
 export default function MapScreen() {
   const navigate = useNavigate();
-  const { privacySettings, featureFlags, incrementQuota, places, avoidList } = useAppContext();
+  const { privacySettings, featureFlags, incrementQuota, places, avoidList, addPlace } = useAppContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const isRoutingActive = searchParams.get('routing') === 'true';
 
@@ -187,6 +188,37 @@ export default function MapScreen() {
       setUserCoords(null);
     }
   }, [privacySettings.trackLocation]);
+
+  // Fetch and display real nearby locations from BE when GPS coordinates are active
+  useEffect(() => {
+    if (!userCoords) return;
+    let isMounted = true;
+    locationService.getNearby(userCoords.lat, userCoords.lon, 30, 20)
+      .then(res => {
+        if (!isMounted || !res?.data || !Array.isArray(res.data)) return;
+        res.data.forEach((loc: any) => {
+          if (loc.latitude && loc.longitude && !places.some(p => p.id === loc.id || p.title === loc.name)) {
+            addPlace({
+              title: loc.name,
+              tag: loc.categoryName || 'Địa điểm gần bạn',
+              location: loc.address || 'Gần bạn',
+              description: loc.description || `Địa điểm cách bạn khoảng ${loc.distanceKm ? loc.distanceKm.toFixed(1) : 1} km`,
+              price: 'Miễn phí',
+              imageClass: 'bg-gradient-nature',
+              reasons: ['Gần vị trí GPS của bạn', 'Thuận tiện di chuyển'],
+              categoryId: loc.categoryId,
+              categoryName: loc.categoryName,
+              lat: loc.latitude,
+              lon: loc.longitude,
+              ownerId: 'nearby_gps'
+            });
+          }
+        });
+      })
+      .catch(err => console.warn('Lỗi lấy địa điểm lân cận:', err));
+
+    return () => { isMounted = false; };
+  }, [userCoords]);
 
   const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const radlat1 = (Math.PI * lat1) / 180;
