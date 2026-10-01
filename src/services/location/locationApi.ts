@@ -6,11 +6,17 @@ import * as DTO from "@/services/location/locationType";
 // GET categories / GET list / GET by id: [AllowAnonymous]
 // POST / PUT / DELETE: [Authorize] -> requiresAuth: true
 export const locationService = {
-  /** GET /api/Location/categories (public) */
+  /** GET /api/Category (public) */
   getAllCategories: () =>
-    api.getApi<DTO.CategoryDto[]>(`${controllerName.Location}/categories`) as Promise<
+    api.getApi<DTO.CategoryDto[]>(controllerName.category) as Promise<
       api.ApiResult<DTO.CategoryDto[]>
     >,
+
+  /** GET /api/Location/nearby (public, tìm theo GPS) */
+  getNearby: (lat: number, lng: number, radiusKm = 5, limit = 50) =>
+    api.getApi<DTO.NearbyLocationDto[]>(`${controllerName.Location}/nearby`, {
+      params: { lat, lng, radiusKm, limit },
+    }) as Promise<api.ApiResult<DTO.NearbyLocationDto[]>>,
 
   /** GET /api/Location?... (public, phân trang) */
   getAll: (filter: DTO.LocationFilterDto = {}) =>

@@ -121,7 +121,7 @@ function getSafeRedirectPath(path: string): string | null {
  *  TOKEN UTIL
  * ============================================================
  */
-function getAccessToken(): string | undefined {
+export function getAccessToken(): string | undefined {
   return Cookies.get("accessToken");
 }
 function setTokens(accessToken?: string, refreshToken?: string) {
@@ -168,7 +168,7 @@ export async function refreshAccessToken(): Promise<string | null> {
   try {
     // Dùng axios gốc (không phải instance "api") để tránh lặp interceptor 401 vô tận
     const res = await axios.post<RawApiEnvelope<{ accessToken: string; refreshToken: string }>>(
-      `${BASE_URL.endsWith("/") ? BASE_URL : BASE_URL + "/"}Autethication/refresh-token`,
+      `${BASE_URL.endsWith("/") ? BASE_URL : BASE_URL + "/"}Authetication/refresh-token`,
       { refreshToken },
     );
 
@@ -314,7 +314,7 @@ api.interceptors.response.use(
 
         clearTokens();
 
-        if (!window.location.pathname.startsWith("/auth")) {
+        if (originalRequest?.isRedirect === true && !window.location.pathname.startsWith("/auth")) {
           const candidate = window.location.pathname + (window.location.search || "");
           const safe = getSafeRedirectPath(candidate);
           goTo(safe ? `/auth/login?redirect=${encodeURIComponent(safe)}` : "/auth/login");

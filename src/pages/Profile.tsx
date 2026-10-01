@@ -9,20 +9,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAppContext } from '../context/AppContext';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../App';
-import { userService } from '@/services/user/userApi'
+import { userService } from '@/services/user/userApi';
+import { reviewService } from '@/services/review/reviewApi';
 import AddPlaceModal from '../components/AddPlaceModal';
 import AuthForm from '../components/AuthForm';
-
-const GetMyProfile = async () => {
-  try {
-    const res = await userService.getMyProfile();
-    if (res.success && res.data) {
-      console.log(res.data);
-    }
-  } catch (err) {
-    console.error(err);
-  }
-}
 
 export default function Profile() {
   const { 
@@ -38,6 +28,15 @@ export default function Profile() {
     // Phase 2 Context
     legalHoldActive, setLegalHoldActive, purgeLogs, runPurgeWorker, checkPoiFingerprint
   } = useAppContext();
+
+  useEffect(() => {
+    if (user && user.loggedIn) {
+      // Trigger real GET /api/User/me
+      userService.getMyProfile().catch(err => console.log('Get profile API err:', err));
+      // Trigger real GET /api/Review/my
+      reviewService.getMyReviews().catch(err => console.log('Get my reviews API err:', err));
+    }
+  }, [user]);
 
   const navigate = useNavigate();
   const [showAddPlace, setShowAddPlace] = useState(false);

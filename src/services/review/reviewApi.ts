@@ -12,6 +12,12 @@ export const reviewService = {
       params: { pageIndex: 1, pageSize: 10, ...filter },
     }) as Promise<api.ApiPageResult<DTO.ReviewDto>>,
 
+  /** GET /api/Review/location/{locationId}/stats (public) */
+  getStats: (locationId: number) =>
+    api.getApi<DTO.ReviewStatsDto>(`${controllerName.Review}/location/${locationId}/stats`) as Promise<
+      api.ApiResult<DTO.ReviewStatsDto>
+    >,
+
   /** GET /api/Review/{id} (public) */
   getById: (id: number) =>
     api.getApi<DTO.ReviewDto>(`${controllerName.Review}/${id}`) as Promise<api.ApiResult<DTO.ReviewDto>>,

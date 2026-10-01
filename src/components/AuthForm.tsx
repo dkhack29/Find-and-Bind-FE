@@ -9,6 +9,7 @@ import {
 import { useAppContext } from '../context/AppContext';
 import { cn } from '../App';
 import { authService } from '../services/authentication/authApi';
+import { userService } from '../services/user/userApi';
 import type { LoginDto, RegisterRequestDto } from '../services/authentication/authType';
 
 interface OtpState {
@@ -122,6 +123,16 @@ export default function AuthForm({ onSuccess }: { onSuccess?: () => void }) {
     return re.test(phone.trim());
   };
 
+  const validatePasswordRules = (pwd: string) => {
+    if (!pwd) return 'Vui lòng nhập mật khẩu.';
+    if (pwd.length < 6) return 'Mật khẩu phải có tối thiểu 6 ký tự.';
+    if (!/\d/.test(pwd)) return 'Mật khẩu phải có ít nhất 1 chữ số (0-9).';
+    if (!/[a-z]/.test(pwd)) return 'Mật khẩu phải có ít nhất 1 chữ cái thường (a-z).';
+    if (!/[A-Z]/.test(pwd)) return 'Mật khẩu phải có ít nhất 1 chữ cái hoa (A-Z).';
+    if (!/[^a-zA-Z0-9]/.test(pwd)) return 'Mật khẩu phải chứa ít nhất 1 ký tự đặc biệt (ví dụ: @, #, $, !, %).';
+    return null;
+  };
+
   // Submit Login
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -220,10 +231,9 @@ export default function AuthForm({ onSuccess }: { onSuccess?: () => void }) {
       errors.email = 'Vui lòng nhập địa chỉ Gmail hợp lệ.';
     }
 
-    if (!regPassword) {
-      errors.password = 'Vui lòng nhập mật khẩu tối thiểu 6 ký tự.';
-    } else if (regPassword.length < 6) {
-      errors.password = 'Vui lòng nhập mật khẩu tối thiểu 6 ký tự.';
+    const pwdErr = validatePasswordRules(regPassword);
+    if (pwdErr) {
+      errors.password = pwdErr;
     }
 
     if (!regConfirmPassword) {
@@ -328,6 +338,24 @@ export default function AuthForm({ onSuccess }: { onSuccess?: () => void }) {
       const res = await authService.register(registerPayload);
 
       if (res && (res.success || res.data)) {
+        // Auto-login to obtain accessToken cookies
+        try {
+          const loginRes = await authService.login({
+            email: otpSession.email,
+            password: otpSession.password || '',
+          });
+          if (loginRes && (loginRes.success || loginRes.data)) {
+            if (otpSession.name) {
+              await userService.updateMyProfile({
+                fullName: otpSession.name,
+                avatar: '',
+              }).catch(() => {});
+            }
+          }
+        } catch (loginErr) {
+          console.warn('Auto login after registration failed:', loginErr);
+        }
+
         localStorage.removeItem(STORAGE_KEY_OTP);
         login(otpSession.email, otpSession.name, otpSession.phone, otpSession.gender, 'email');
         if (onSuccess) onSuccess();
@@ -838,6 +866,25 @@ export default function AuthForm({ onSuccess }: { onSuccess?: () => void }) {
                   <AlertCircle size={12} /> {regErrors.password}
                 </p>
               )}
+
+              {/* Password strength tips */}
+              <div className="mt-2 p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1 text-[10.5px]">
+                <div className="font-bold text-slate-500 mb-1">Yêu cầu độ mạnh mật khẩu:</div>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1 font-medium">
+                  <span className={regPassword.length >= 6 ? "text-emerald-600 font-bold flex items-center gap-1" : "text-slate-400 flex items-center gap-1"}>
+                    {regPassword.length >= 6 ? "✓" : "○"} Tối thiểu 6 ký tự
+                  </span>
+                  <span className={/\d/.test(regPassword) ? "text-emerald-600 font-bold flex items-center gap-1" : "text-slate-400 flex items-center gap-1"}>
+                    {/\d/.test(regPassword) ? "✓" : "○"} Ít nhất 1 chữ số (0-9)
+                  </span>
+                  <span className={/[A-Z]/.test(regPassword) ? "text-emerald-600 font-bold flex items-center gap-1" : "text-slate-400 flex items-center gap-1"}>
+                    {/[A-Z]/.test(regPassword) ? "✓" : "○"} Chữ cái viết hoa (A-Z)
+                  </span>
+                  <span className={/[^a-zA-Z0-9]/.test(regPassword) ? "text-emerald-600 font-bold flex items-center gap-1" : "text-slate-400 flex items-center gap-1"}>
+                    {/[^a-zA-Z0-9]/.test(regPassword) ? "✓" : "○"} Ký tự đặc biệt (@,#,$,!)
+                  </span>
+                </div>
+              </div>
             </div>
 
             {/* Confirm Password Field */}
@@ -1029,9 +1076,18 @@ export default function AuthForm({ onSuccess }: { onSuccess?: () => void }) {
 
             {/* Error banner */}
             {otpError && (
-              <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-2xl text-xs font-semibold flex items-start gap-2">
-                <AlertCircle size={16} className="shrink-0 text-red-500 mt-0.5" />
-                <span>{otpError}</span>
+              <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-2xl text-xs font-semibold space-y-2">
+                <div className="flex items-start gap-2">
+                  <AlertCircle size={16} className="shrink-0 text-red-500 mt-0.5" />
+                  <span>{otpError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMode('register')}
+                  className="w-full py-1.5 bg-red-100 hover:bg-red-200 text-red-800 text-[11px] font-bold rounded-lg transition-colors cursor-pointer text-center flex items-center justify-center gap-1"
+                >
+                  <ChevronLeft size={14} /> Quay lại sửa thông tin đăng ký
+                </button>
               </div>
             )}
 

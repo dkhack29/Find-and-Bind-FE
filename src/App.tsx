@@ -18,13 +18,21 @@ import CaseTracking from './pages/CaseTracking';
 import AdminDispatchConsole from './pages/AdminDispatchConsole';
 import AdminPoiConsole from './pages/AdminPoiConsole';
 
+import { setNavigator } from './helper/callApi';
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 function MainLayout() {
   const location = useLocation();
-  const hideNavRoutes = ['/place/', '/plan/new', '/plan/detail/', '/profile/cases', '/admin/dispatch', '/admin/poi'];
+  const navigate = useNavigate();
+
+  React.useEffect(() => {
+    setNavigator(navigate);
+  }, [navigate]);
+
+  const hideNavRoutes = ['/place/', '/plan/new', '/plan/detail/', '/profile/cases', '/admin/dispatch', '/admin/poi', '/auth/', '/login'];
   const shouldHideNav = 
     hideNavRoutes.some(path => location.pathname.includes(path)) ||
     (location.pathname === '/map' && location.search.includes('routing=true'));
@@ -48,6 +56,8 @@ function MainLayout() {
               <Route path="/profile/cases" element={<CaseTracking />} />
               <Route path="/admin/dispatch" element={<AdminDispatchConsole />} />
               <Route path="/admin/poi" element={<AdminPoiConsole />} />
+              <Route path="/auth/login" element={<Profile />} />
+              <Route path="/login" element={<Profile />} />
               <Route path="*" element={<Discovery />} />
             </Routes>
           </AnimatePresence>
