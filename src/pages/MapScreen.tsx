@@ -114,7 +114,7 @@ const getStepInstruction = (step: any) => {
 
 export default function MapScreen() {
   const navigate = useNavigate();
-  const { privacySettings, featureFlags, incrementQuota, places, avoidList, addPlace } = useAppContext();
+  const { privacySettings, featureFlags, incrementQuota, places, avoidList, addPlace, showToast } = useAppContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const isRoutingActive = searchParams.get('routing') === 'true';
 
@@ -250,7 +250,7 @@ export default function MapScreen() {
 
   const requestGPS = async () => {
     if (!privacySettings.trackLocation) {
-      alert("Quyền định vị đã bị tắt trong Cài đặt riêng tư của bạn. Vui lòng bật lại ở trang Cá nhân.");
+      showToast("Quyền định vị đã bị tắt trong Cài đặt riêng tư. Vui lòng bật lại ở trang Cá nhân.", "warning");
       return;
     }
     try {
@@ -313,7 +313,7 @@ export default function MapScreen() {
               },
               (error2) => {
                 console.error("Browser GPS Low Accuracy also failed: ", error2);
-                setUserCoords({ lat: 19.8076, lon: 105.7765 });
+                setUserCoords(null);
                 localStorage.setItem('gps_consented', 'false');
                 localStorage.setItem('gps_denied', 'true');
                 setShowGpsModal(false);
@@ -324,14 +324,14 @@ export default function MapScreen() {
           { enableHighAccuracy: true, timeout: 10000 }
         );
       } else {
-        setUserCoords({ lat: 19.8076, lon: 105.7765 });
+        setUserCoords(null);
         setShowGpsModal(false);
       }
     }
   };
 
   const handleDeclineGps = () => {
-    setUserCoords({ lat: 19.8076, lon: 105.7765 });
+    setUserCoords(null);
     localStorage.setItem('gps_consented', 'false');
     localStorage.setItem('gps_denied', 'true');
     setShowGpsModal(false);
@@ -415,11 +415,11 @@ export default function MapScreen() {
         const first = data[0];
         goToLocation(parseFloat(first.lat), parseFloat(first.lon), first.display_name);
       } else {
-        alert("Không tìm thấy địa điểm này. Vui lòng thử lại!");
+        showToast("Không tìm thấy địa điểm này. Vui lòng thử lại!", "error");
       }
     } catch (err) {
       console.error("Geocoding lookup error:", err);
-      alert("Lỗi kết nối tìm kiếm địa điểm.");
+      showToast("Lỗi kết nối khi tìm kiếm địa điểm.", "error");
     } finally {
       setIsSearching(false);
     }
@@ -467,7 +467,7 @@ export default function MapScreen() {
           };
           setSelectedPlace(mapPlace);
         }
-        alert(`AI Gemini (Vision) đã nhận diện ảnh: "${match.name}"! Tự động hiển thị trên bản đồ.`);
+        showToast(`Đã nhận diện địa điểm: "${match.name}"! Tự động định vị trên bản đồ.`, "success");
       }
     }, 2200);
   };
@@ -480,7 +480,7 @@ export default function MapScreen() {
         return prev.filter(p => p.id !== place.id);
       } else {
         if (prev.length >= 3) {
-          alert("Bạn chỉ có thể so sánh tối đa 3 địa điểm cùng lúc.");
+          showToast("Bạn chỉ có thể so sánh tối đa 3 địa điểm cùng lúc.", "warning");
           return prev;
         }
         return [...prev, place];
@@ -853,7 +853,7 @@ export default function MapScreen() {
                 <button
                   onClick={async () => {
                     if (avoidList.includes(Number(selectedPlace.id))) {
-                      alert("Không thể tìm đường đến địa điểm trong danh sách tránh xa.");
+                      showToast("Địa điểm này nằm trong danh sách tránh xa của bạn.", "info");
                       return;
                     }
                     if (!userCoords) {
@@ -979,7 +979,10 @@ export default function MapScreen() {
 
       {/* Sticky Bottom Compare Banner */}
       {comparePlaces.length > 0 && (
-        <div className="fixed bottom-28 left-6 right-6 z-40 bg-slate-900 text-white p-4 rounded-3xl flex justify-between items-center shadow-2xl pointer-events-auto border border-slate-800 text-left">
+        <div className={cn(
+        "fixed left-6 right-6 z-40 bg-slate-900 text-white p-4 rounded-3xl flex justify-between items-center shadow-2xl pointer-events-auto border border-slate-800 text-left transition-all duration-300",
+        selectedPlace ? "bottom-[235px]" : "bottom-24"
+      )}>
           <div className="flex items-center gap-2">
             <Scale className="text-amber-400 animate-pulse" size={16} />
             <div>
@@ -1047,7 +1050,7 @@ export default function MapScreen() {
                   </thead>
                   <tbody>
                     <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                      <td className="py-3 pr-4 font-bold text-slate-500">Đánh giá</td>
+                      <td className="py-3 px-3 font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-100">Đánh giá</td>
                       {comparePlaces.map(p => (
                         <td key={p.id} className="py-3 px-3 font-semibold">
                           <span className="text-amber-500 font-extrabold flex items-center gap-0.5">{p.rating} <Star size={11} className="fill-amber-400"/></span>
@@ -1056,7 +1059,7 @@ export default function MapScreen() {
                       ))}
                     </tr>
                     <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                      <td className="py-3 pr-4 font-bold text-slate-500">Độ tin cậy</td>
+                      <td className="py-3 px-3 font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-100">Độ tin cậy</td>
                       {comparePlaces.map(p => (
                         <td key={p.id} className="py-3 px-3">
                           {p.trustScore ? (
@@ -1070,7 +1073,7 @@ export default function MapScreen() {
                       ))}
                     </tr>
                     <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                      <td className="py-3 pr-4 font-bold text-slate-500">Mức rủi ro</td>
+                      <td className="py-3 px-3 font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-100">Mức rủi ro</td>
                       {comparePlaces.map(p => {
                         const isHigh = p.riskLevel === 'Trung bình' || p.riskLevel === 'Cao';
                         return (
@@ -1081,7 +1084,7 @@ export default function MapScreen() {
                       })}
                     </tr>
                     <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                      <td className="py-3 pr-4 font-bold text-slate-500">Khoảng cách</td>
+                      <td className="py-3 px-3 font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-100">Khoảng cách</td>
                       {comparePlaces.map(p => (
                         <td key={p.id} className="py-3 px-3 font-bold text-slate-700">
                           {p.distance}
@@ -1089,7 +1092,7 @@ export default function MapScreen() {
                       ))}
                     </tr>
                     <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                      <td className="py-3 pr-4 font-bold text-slate-500">Tài trợ (Ad)</td>
+                      <td className="py-3 px-3 font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-100">Tài trợ (Ad)</td>
                       {comparePlaces.map(p => (
                         <td key={p.id} className="py-3 px-3">
                           {p.isSponsored ? (

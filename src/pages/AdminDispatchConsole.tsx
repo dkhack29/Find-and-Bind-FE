@@ -17,7 +17,7 @@ export default function AdminDispatchConsole() {
   const navigate = useNavigate();
   const { 
     cases, updateCaseStatus, role, appeals, updateAppealStatus, places,
-    rescuePicks, approveRescuePick, rejectRescuePick
+    rescuePicks, approveRescuePick, rejectRescuePick, showToast
   } = useAppContext();
   
   const [activeTab, setActiveTab] = useState<'reports' | 'appeals' | 'rescue'>('reports');
@@ -49,7 +49,7 @@ export default function AdminDispatchConsole() {
     setShowActionModal(null);
     setSelectedCaseId(null);
     setCustomNote('');
-    alert("Đã cập nhật trạng thái Case và lưu nhật ký điều phối thành công!");
+    showToast("Đã cập nhật trạng thái Case thành công!", "success");
   };
 
   const handleVerifyChecklist = (index: number) => {
@@ -68,10 +68,7 @@ export default function AdminDispatchConsole() {
     
     setSelectedAppealId(null);
     setAppealChecklist([false, false, false, false]);
-    alert(status === 'approved' 
-      ? "Đã phê duyệt Kháng cáo thành công! Danh tiếng POI đã được khôi phục." 
-      : "Đã từ chối đơn kháng cáo của Đối tác."
-    );
+    showToast(status === 'approved' ? "Đã phê duyệt Kháng cáo thành công!" : "Đã từ chối đơn kháng cáo của Đối tác.", status === 'approved' ? "success" : "info");
   };
 
   if (role !== 'moderator' && role !== 'admin') {
@@ -87,10 +84,10 @@ export default function AdminDispatchConsole() {
             Trang này chỉ dành cho Quản trị viên (Moderator/Admin). Vui lòng chuyển vai trò sang "Mod" hoặc "Admin" trong trang Cá nhân.
           </p>
           <button 
-            onClick={() => navigate('/profile')}
+            onClick={() => window.history.length > 1 ? navigate(-1) : navigate('/map')}
             className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl text-xs active:scale-95 transition-all"
           >
-            Đến trang Cá nhân
+            Quay lại màn hình trước
           </button>
         </div>
       </motion.div>
@@ -309,7 +306,7 @@ export default function AdminDispatchConsole() {
                   return (
                     <div className="space-y-4">
                       <div className="bg-white/5 border border-white/10 rounded-2xl p-3.5 text-[11px] font-semibold space-y-1 text-indigo-200">
-                        <div>POI Kháng nghị: <span className="font-black text-white">{poi?.title}</span></div>
+                        <div>Địa điểm Kháng nghị: <span className="font-black text-white">{poi?.title}</span></div>
                         <div>Lý do đối tác đưa ra: <span className="font-medium text-slate-200">"{ap?.evidence}"</span></div>
                       </div>
 

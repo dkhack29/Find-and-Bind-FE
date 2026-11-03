@@ -1,11 +1,16 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import Cookies from 'js-cookie';
+import { motion, AnimatePresence } from 'motion/react';
+import { CheckCircle2, AlertTriangle, AlertCircle, Info, X } from 'lucide-react';
 import { locationService } from '@/services/location/locationApi';
 import { itineraryService } from '@/services/itinerary/itineraryApi';
 import { userService } from '@/services/user/userApi';
 import type { CategoryDto } from '@/services/location/locationType';
 
 export type Role = 'user' | 'merchant' | 'admin' | 'moderator';
+
+export type ToastType = 'success' | 'error' | 'info' | 'warning';
+export type ToastItem = { id: string; message: string; type: ToastType };
 
 export type Review = {
   id: string;
@@ -62,6 +67,7 @@ export type TripDay = {
 };
 export type Trip = {
   id: number; name: string; date: string; location: string; status: string; days: number; itinerary: TripDay[];
+  isPublished?: boolean;
 };
 
 export type FeatureFlags = {
@@ -146,6 +152,20 @@ export type PoiFingerprint = {
   taxId: string;
   bannedAt: string;
 };
+
+export interface PendingDeletionAccount {
+  email: string;
+  name?: string;
+  phone?: string;
+  gender?: string;
+  authMethod?: 'email' | 'google' | 'apple';
+  isVerifiedL3?: boolean;
+  ekycHash?: string;
+  requestedAt: number;
+  deleteAt: number; // 7 days later
+  savedPlaceIds: number[];
+  trips: Trip[];
+}
 
 const INITIAL_RESCUE_PICKS: RescuePick[] = [
   {
@@ -393,7 +413,7 @@ type AppContextType = {
   role: Role; setRole: (role: Role) => void;
   places: Place[]; addPlace: (place: Omit<Place, 'id' | 'rating' | 'reviewsCount'>) => void;
   addPlaceWithOwner: (place: Omit<Place, 'id' | 'rating' | 'reviewsCount'> & { ownerId: string }) => void;
-  trips: Trip[]; addTrip: (trip: Omit<Trip, 'id'>) => void;
+  trips: Trip[]; addTrip: (trip: Omit<Trip, 'id'>) => void; updateTrip: (id: number, updated: Partial<Trip>) => void;
   savedPlaceIds: number[]; toggleSavedPlace: (id: number) => void;
   reviews: Review[]; addReview: (review: Omit<Review, 'id' | 'date'>) => void;
   addReviewReply: (reviewId: string, reply: string) => void;
@@ -401,11 +421,14 @@ type AppContextType = {
   login: (email: string, name?: string, phone?: string, gender?: string, authMethod?: 'email' | 'google' | 'apple') => void;
   logout: () => void;
   deleteAccount: () => void;
+  scheduleAccountDeletion: () => boolean;
+  checkPendingDeletion: (email: string) => { isPending: boolean; isExpired: boolean; deleteAt?: number; daysRemaining?: number; email: string } | null;
+  restoreAccount: (email: string) => boolean;
   privacySettings: { trackLocation: boolean; allowShareData: boolean };
   updatePrivacySettings: (settings: { trackLocation: boolean; allowShareData: boolean }) => void;
   cases: Case[];
   addCase: (poiTitle: string, reportType: string) => void;
-  addCaseWithCoords: (poiTitle: string, reportType: string, lat: number, lon: number, evidenceUrl?: string) => void;
+  addCaseWithCoords: (poiTitle: string, reportType: string, lat: number, lon: number, evidenceUrl?: string, customId?: string) => void;
   updateCaseStatus: (id: string, status: 'resolved' | 'rejected', reasonText: string) => void;
   updatePlaceTag: (id: number, newTag: string) => void;
   updatePlaceTrust: (id: number, score: number, risk: 'Bình thường' | 'Thấp' | 'Trung bình' | 'Cao', reasons?: string[]) => void;
@@ -434,6 +457,8 @@ type AppContextType = {
   refreshPlaces: () => Promise<void>;
   refreshCategories: () => Promise<void>;
   refreshTrips: () => Promise<void>;
+  togglePublishTrip: (tripId: number, isPublished: boolean) => Promise<boolean>;
+  clonePublishedTrip: (publishedId: number) => Promise<boolean>;
 
   // Phase 2 Features States
   rescuePicks: RescuePick[];
@@ -449,6 +474,13 @@ type AppContextType = {
   syncLamportEvents: (tripId: number, incomingEvents: LamportEvent[]) => void;
   checkPoiFingerprint: (lat: number, lon: number, layoutHash: string, taxId: string) => { match: boolean; reason?: string };
   runPurgeWorker: () => void;
+
+  // Toast Notification System
+  showToast: (message: string, type?: ToastType) => void;
+
+  // Dynamic Trip Activity Management
+  addActivityToTrip: (tripId: number, dayNumber: number, activity: TripActivity) => void;
+  deleteActivityFromTrip: (tripId: number, dayNumber: number, activityIndex: number) => void;
 };
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -480,6 +512,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       reportType: 'Giá không đúng',
       createdAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
       status: 'processing',
+      lat: 11.9404,
+      lon: 108.4583,
+      evidenceUrl: 'https://images.unsplash.com/photo-1554415707-9e49fa664822?w=500&auto=format&fit=crop&q=80',
       logs: [
         { time: new Date(Date.now() - 3 * 3600 * 1000).toLocaleString('vi-VN'), message: 'Người dùng gửi báo cáo sai phạm về chênh lệch giá vé thực tế.' },
         { time: new Date(Date.now() - 2.5 * 3600 * 1000).toLocaleString('vi-VN'), message: 'Hệ thống tự động phân phối và tiếp nhận bởi Điều phối viên.' }
@@ -491,6 +526,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       reportType: 'Đóng cửa / Sai giờ',
       createdAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
       status: 'pending',
+      lat: 20.9101,
+      lon: 107.1839,
+      evidenceUrl: 'https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?w=500&auto=format&fit=crop&q=80',
       logs: [
         { time: new Date(Date.now() - 1 * 3600 * 1000).toLocaleString('vi-VN'), message: 'Người dùng báo cáo địa điểm đóng cửa bảo trì không báo trước.' }
       ]
@@ -501,6 +539,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       reportType: 'PR rác / Bịp bợm',
       createdAt: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
       status: 'resolved',
+      lat: 15.8801,
+      lon: 108.3380,
+      evidenceUrl: 'https://images.unsplash.com/photo-1552832230-c0197dd311b5?w=500&auto=format&fit=crop&q=80',
       logs: [
         { time: new Date(Date.now() - 24 * 3600 * 1000).toLocaleString('vi-VN'), message: 'Báo cáo spam review từ dịch vụ chèo kéo khách.' },
         { time: new Date(Date.now() - 22 * 3600 * 1000).toLocaleString('vi-VN'), message: 'Điều phối viên đã xác minh và ẩn các bình luận vi phạm tiêu chuẩn cộng đồng.' }
@@ -623,28 +664,67 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const res = await itineraryService.getAll({ pageIndex: 1, pageSize: 20 });
       if (res?.data && Array.isArray(res.data) && res.data.length > 0) {
-        const mappedTrips: Trip[] = res.data.map(t => ({
-          id: t.id,
-          name: t.title,
-          date: t.startDate ? new Date(t.startDate).toLocaleDateString('vi-VN') : 'Sắp tới',
-          location: t.title.replace(/^Khám phá\s*/i, '') || 'Việt Nam',
-          status: 'Sắp tới',
-          days: t.totalDays || 3,
-          itinerary: [
-            { day: 1, title: 'Lộ trình', items: [{ time: '08:00', act: `${t.totalActivities || 1} hoạt động đã lên kế hoạch`, type: 'activity' }] }
-          ]
-        }));
+        const mappedTrips: Trip[] = res.data.map(t => {
+          const existing = trips.find(et => et.id === t.id);
+          return {
+            id: t.id,
+            name: t.title,
+            date: t.startDate ? new Date(t.startDate).toLocaleDateString('vi-VN') : 'Sắp tới',
+            location: t.title.replace(/^Khám phá\s*/i, '').replace(/^Lịch trình\s*/i, '') || 'Việt Nam',
+            status: 'Sắp tới',
+            days: t.totalDays || 3,
+            isPublished: (t as any).isPublished ?? existing?.isPublished ?? false,
+            itinerary: existing?.itinerary && existing.itinerary.length > 0 ? existing.itinerary : [
+              { day: 1, title: 'Lộ trình', items: [{ time: '08:00', act: `${t.totalActivities || 1} hoạt động đã lên kế hoạch`, type: 'activity' }] }
+            ]
+          };
+        });
         setTrips(prev => {
-          const mapById = new Map<number, Trip>();
-          mappedTrips.forEach(t => mapById.set(t.id, t));
-          prev.forEach(t => {
-            if (!mapById.has(t.id)) mapById.set(t.id, t);
+          const mapByKey = new Map<string, Trip>();
+          // Combine prev and mappedTrips, prioritizing richer data
+          const combined = [...mappedTrips, ...prev];
+          combined.forEach(t => {
+            const cleanLoc = (t.location || t.name).toLowerCase().replace(/^(khám phá|lịch trình)\s*/i, '').trim();
+            const key = `${cleanLoc}_${t.days}`;
+            if (!mapByKey.has(key)) {
+              mapByKey.set(key, t);
+            } else {
+              const existing = mapByKey.get(key)!;
+              if ((!existing.itinerary || existing.itinerary.length <= 1) && (t.itinerary && t.itinerary.length > 1)) {
+                mapByKey.set(key, t);
+              }
+            }
           });
-          return Array.from(mapById.values());
+          return Array.from(mapByKey.values());
         });
       }
     } catch (err) {
       console.log('Fetch trips error:', err);
+    }
+  };
+
+  const togglePublishTrip = async (tripId: number, isPublished: boolean): Promise<boolean> => {
+    try {
+      await itineraryService.togglePublish(tripId, isPublished);
+      setTrips(prev => prev.map(t => t.id === tripId ? { ...t, isPublished } : t));
+      return true;
+    } catch (err: any) {
+      console.error('Toggle publish trip error:', err);
+      throw err;
+    }
+  };
+
+  const clonePublishedTrip = async (publishedId: number): Promise<boolean> => {
+    try {
+      const res = await itineraryService.clonePublished(publishedId);
+      if (res?.data) {
+        await refreshTrips();
+        return true;
+      }
+      return false;
+    } catch (err: any) {
+      console.error('Clone published trip error:', err);
+      throw err;
     }
   };
 
@@ -791,11 +871,114 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('user_session');
   };
 
-  const deleteAccount = () => {
+  const PENDING_DELETIONS_KEY = 'find_bind_pending_deletions';
+
+  const scheduleAccountDeletion = (): boolean => {
+    if (!user || !user.email) return false;
+
+    const requestedAt = Date.now();
+    const deleteAt = requestedAt + 7 * 24 * 60 * 60 * 1000; // Bảo lưu 7 ngày giống Spotify
+
+    const pendingItem: PendingDeletionAccount = {
+      email: user.email.toLowerCase().trim(),
+      name: user.name,
+      phone: user.phone,
+      gender: user.gender,
+      authMethod: user.authMethod,
+      isVerifiedL3: user.isVerifiedL3,
+      ekycHash: user.ekycHash,
+      requestedAt,
+      deleteAt,
+      savedPlaceIds: [...savedPlaceIds],
+      trips: [...trips]
+    };
+
+    let list: PendingDeletionAccount[] = [];
+    try {
+      const stored = localStorage.getItem(PENDING_DELETIONS_KEY);
+      if (stored) list = JSON.parse(stored);
+    } catch (e) {
+      list = [];
+    }
+
+    list = list.filter(item => item.email.toLowerCase() !== pendingItem.email);
+    list.push(pendingItem);
+    localStorage.setItem(PENDING_DELETIONS_KEY, JSON.stringify(list));
+
+    // Đăng xuất và khóa phiên người dùng
     setUser(null);
-    localStorage.clear();
+    localStorage.removeItem('user_session');
     setSavedPlaceIds([]);
     setTrips([]);
+    return true;
+  };
+
+  const checkPendingDeletion = (email: string) => {
+    if (!email) return null;
+    const cleanEmail = email.toLowerCase().trim();
+    let list: PendingDeletionAccount[] = [];
+    try {
+      const stored = localStorage.getItem(PENDING_DELETIONS_KEY);
+      if (stored) list = JSON.parse(stored);
+    } catch (e) {
+      list = [];
+    }
+
+    const found = list.find(item => item.email.toLowerCase() === cleanEmail);
+    if (!found) return null;
+
+    const now = Date.now();
+    if (now >= found.deleteAt) {
+      // Đã quá 7 ngày -> Xóa vĩnh viễn
+      list = list.filter(item => item.email.toLowerCase() !== cleanEmail);
+      localStorage.setItem(PENDING_DELETIONS_KEY, JSON.stringify(list));
+      return { isPending: false, isExpired: true, email: cleanEmail };
+    }
+
+    const diffMs = found.deleteAt - now;
+    const daysRemaining = Math.max(1, Math.ceil(diffMs / (24 * 60 * 60 * 1000)));
+
+    return {
+      isPending: true,
+      isExpired: false,
+      deleteAt: found.deleteAt,
+      daysRemaining,
+      email: cleanEmail
+    };
+  };
+
+  const restoreAccount = (email: string): boolean => {
+    if (!email) return false;
+    const cleanEmail = email.toLowerCase().trim();
+    let list: PendingDeletionAccount[] = [];
+    try {
+      const stored = localStorage.getItem(PENDING_DELETIONS_KEY);
+      if (stored) list = JSON.parse(stored);
+    } catch (e) {
+      list = [];
+    }
+
+    const foundIndex = list.findIndex(item => item.email.toLowerCase() === cleanEmail);
+    if (foundIndex === -1) return false;
+
+    const item = list[foundIndex];
+    if (item.savedPlaceIds && Array.isArray(item.savedPlaceIds)) {
+      setSavedPlaceIds(item.savedPlaceIds);
+    }
+    if (item.trips && Array.isArray(item.trips)) {
+      setTrips(item.trips);
+    }
+
+    login(item.email, item.name, item.phone, item.gender, item.authMethod || 'email');
+
+    list.splice(foundIndex, 1);
+    localStorage.setItem(PENDING_DELETIONS_KEY, JSON.stringify(list));
+    return true;
+  };
+
+  const deleteAccount = () => {
+    // Gọi cơ chế soft delete 7 ngày chuẩn Spotify
+    scheduleAccountDeletion();
   };
 
   const updatePrivacySettings = (settings: { trackLocation: boolean; allowShareData: boolean }) => {
@@ -807,24 +990,47 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addCaseWithCoords(poiTitle, reportType, 10.7719, 106.6983);
   };
 
-  const addCaseWithCoords = (poiTitle: string, reportType: string, lat: number, lon: number, evidenceUrl?: string) => {
-    const newCase: Case = {
-      id: `RP-${Math.floor(1000 + Math.random() * 9000)}`,
-      poiTitle,
-      reportType,
-      createdAt: new Date().toISOString(),
-      status: 'pending',
-      lat,
-      lon,
-      evidenceUrl,
-      logs: [
-        {
-          time: new Date().toLocaleString('vi-VN'),
-          message: `Báo cáo mới được khởi tạo kèm vị trí GPS: [${lat.toFixed(4)}, ${lon.toFixed(4)}]`
-        }
-      ]
-    };
-    setCases(prev => [newCase, ...prev]);
+  const addCaseWithCoords = (
+    poiTitle: string, 
+    reportType: string, 
+    lat: number, 
+    lon: number, 
+    evidenceUrl?: string,
+    customId?: string
+  ) => {
+    let isDupe = false;
+    setCases(prev => {
+      // Check if same POI and reportType submitted in the last 20 seconds
+      const recent = prev.find(c => c.poiTitle === poiTitle && c.reportType === reportType);
+      if (recent && (Date.now() - new Date(recent.createdAt).getTime() < 20000)) {
+        isDupe = true;
+        return prev;
+      }
+      const newCase: Case = {
+        id: customId || `RP-${Math.floor(1000 + Math.random() * 9000)}`,
+        poiTitle,
+        reportType,
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+        lat,
+        lon,
+        evidenceUrl,
+        logs: [
+          {
+            time: new Date().toLocaleString('vi-VN'),
+            message: `Báo cáo mới được khởi tạo kèm vị trí GPS: [${lat.toFixed(4)}, ${lon.toFixed(4)}]`
+          },
+          ...(evidenceUrl ? [{
+            time: new Date().toLocaleString('vi-VN'),
+            message: 'Đã đính kèm ảnh bằng chứng / hóa đơn thanh toán.'
+          }] : [])
+        ]
+      };
+      return [newCase, ...prev];
+    });
+    if (isDupe) {
+      showToast('Báo cáo cho địa điểm này đã được gửi trước đó và đang được xử lý.', 'info');
+    }
   };
 
   const toggleSavedPlace = (id: number) => {
@@ -846,7 +1052,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addTrip = (trip: Omit<Trip, 'id'>) => {
-    setTrips(prev => [{ ...trip, id: Date.now() }, ...prev]);
+    setTrips(prev => {
+      // Prevent duplicate trip with identical name within 5 seconds
+      const isDuplicate = prev.some(t => t.name === trip.name && Math.abs(t.id - Date.now()) < 5000);
+      if (isDuplicate) return prev;
+      return [{ ...trip, id: Date.now() }, ...prev];
+    });
+  };
+
+  const updateTrip = (id: number, updated: Partial<Trip>) => {
+    setTrips(prev => prev.map(t => t.id === id ? { ...t, ...updated } : t));
   };
 
   const addPlace = (place: Omit<Place, 'id' | 'rating' | 'reviewsCount'>) => {
@@ -908,7 +1123,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setRescuePicks(prev => {
       const approvedCount = prev.filter(p => p.status === 'approved').length;
       if (stage === 'admin' && approvedCount >= 20) {
-        alert("Đã đạt giới hạn slot giải cứu tối đa (rescue_slots_max = 20)!");
+        showToast("Đã đạt giới hạn số lượng địa điểm giải cứu tối đa (tối đa 20 địa điểm)!", "warning");
         return prev;
       }
       return prev.map(p => {
@@ -1054,7 +1269,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const runPurgeWorker = () => {
     if (legalHoldActive) {
-      alert("Hệ thống đang ở chế độ Đóng băng Pháp lý (Legal Hold). Tạm hoãn mọi tiến trình dọn dẹp dữ liệu.");
+      showToast("Hệ thống đang ở chế độ Đóng băng Pháp lý (Legal Hold). Tạm hoãn mọi tiến trình dọn dẹp dữ liệu.", "info");
       return;
     }
     
@@ -1080,17 +1295,80 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     setPurgeLogs(prev => [...purgedItems, ...prev]);
-    alert(`Đã thực thi Auto-purge thành công: Xóa ${purgedItems.length} đầu mục dữ liệu.`);
+    showToast(`Đã dọn dẹp ${purgedItems.length} mục dữ liệu riêng tư thành công!`, 'success');
+  };
+
+  // Toast Notification State (Singleton / Anti-spam deduplication)
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  const showToast = (message: string, type: ToastType = 'info') => {
+    setToasts(prev => {
+      // 1. If an identical toast message is already showing, do not repeat
+      if (prev.some(t => t.message === message)) {
+        return prev;
+      }
+      // 2. Clear previous toast so multiple toasts never stack up on mobile
+      const id = `toast-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      setTimeout(() => {
+        setToasts(curr => curr.filter(t => t.id !== id));
+      }, 3000);
+      return [{ id, message, type }];
+    });
+  };
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  // Dynamic Trip Activity Management
+  const addActivityToTrip = (tripId: number, dayNumber: number, activity: TripActivity) => {
+    setTrips(prev => prev.map(t => {
+      if (t.id !== tripId) return t;
+      const updatedItinerary = [...(t.itinerary || [])];
+      let targetDay = updatedItinerary.find(d => d.day === dayNumber);
+      if (!targetDay) {
+        targetDay = { day: dayNumber, title: `Ngày ${dayNumber}`, activities: [], items: [] };
+        updatedItinerary.push(targetDay);
+        updatedItinerary.sort((a, b) => a.day - b.day);
+      }
+      const newActivities = [...(targetDay.activities || []), activity];
+      const newItems = [...(targetDay.items || []), {
+        time: activity.time,
+        act: `${activity.location} - ${activity.description}`,
+        type: activity.isVerified ? 'verified' : 'explore'
+      }];
+      targetDay.activities = newActivities;
+      targetDay.items = newItems;
+      return { ...t, itinerary: updatedItinerary };
+    }));
+    showToast(`Đã thêm "${activity.location}" vào Ngày ${dayNumber} của chuyến đi!`, 'success');
+  };
+
+  const deleteActivityFromTrip = (tripId: number, dayNumber: number, activityIndex: number) => {
+    setTrips(prev => prev.map(t => {
+      if (t.id !== tripId) return t;
+      const updatedItinerary = (t.itinerary || []).map(d => {
+        if (d.day !== dayNumber) return d;
+        const acts = [...(d.activities || [])];
+        const items = [...(d.items || [])];
+        acts.splice(activityIndex, 1);
+        items.splice(activityIndex, 1);
+        return { ...d, activities: acts, items };
+      });
+      return { ...t, itinerary: updatedItinerary };
+    }));
+    showToast('Đã xóa hoạt động khỏi lịch trình.', 'info');
   };
 
   return (
     <AppContext.Provider value={{
-      role, setRole, places, addPlace, addPlaceWithOwner, trips, addTrip, savedPlaceIds, toggleSavedPlace, reviews, addReview,
-      addReviewReply, user, login, logout, deleteAccount, privacySettings, updatePrivacySettings, cases, addCase,
+      role, setRole, places, addPlace, addPlaceWithOwner, trips, addTrip, updateTrip, savedPlaceIds, toggleSavedPlace, reviews, addReview,
+      addReviewReply, user, login, logout, deleteAccount, scheduleAccountDeletion, checkPendingDeletion, restoreAccount, privacySettings, updatePrivacySettings, cases, addCase,
       addCaseWithCoords, updateCaseStatus, updatePlaceTag, updatePlaceTrust,
       
       // Backend Data & Sync Functions
       categories, refreshPlaces, refreshCategories, refreshTrips,
+      togglePublishTrip, clonePublishedTrip,
 
       // Phase 1 States
       featureFlags, updateFeatureFlags, apiQuota, incrementQuota, avoidList, addToAvoidList, removeFromAvoidList,
@@ -1100,9 +1378,60 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Phase 2 States
       rescuePicks, bannedFingerprints, lamportEvents, legalHoldActive, setLegalHoldActive, purgeLogs,
       approveRescuePick, rejectRescuePick, submitRescuePick, addLamportEvent, syncLamportEvents,
-      checkPoiFingerprint, runPurgeWorker
+      checkPoiFingerprint, runPurgeWorker,
+
+      // Toast & Trip Management
+      showToast, addActivityToTrip, deleteActivityFromTrip
     }}>
       {children}
+
+      {/* Floating Modern Toast Notification Container */}
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] flex flex-col gap-2 w-11/12 max-w-sm pointer-events-none">
+        <AnimatePresence>
+          {toasts.map(toast => {
+            const isSuccess = toast.type === 'success';
+            const isError = toast.type === 'error';
+            const isWarn = toast.type === 'warning';
+
+            return (
+              <motion.div
+                key={toast.id}
+                initial={{ opacity: 0, y: -20, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -15, scale: 0.9 }}
+                transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                className={`pointer-events-auto flex items-center justify-between gap-3 px-4 py-3 rounded-2xl shadow-xl backdrop-blur-xl border transition-all ${
+                  isSuccess 
+                    ? 'bg-emerald-950/90 text-white border-emerald-500/30 shadow-emerald-950/20' 
+                    : isError
+                    ? 'bg-rose-950/90 text-white border-rose-500/30 shadow-rose-950/20'
+                    : isWarn
+                    ? 'bg-amber-950/90 text-white border-amber-500/30 shadow-amber-950/20'
+                    : 'bg-slate-900/90 text-white border-white/20 shadow-slate-950/30'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="shrink-0">
+                    {isSuccess && <CheckCircle2 size={18} className="text-emerald-400" />}
+                    {isError && <AlertCircle size={18} className="text-rose-400" />}
+                    {isWarn && <AlertTriangle size={18} className="text-amber-400" />}
+                    {!isSuccess && !isError && !isWarn && <Info size={18} className="text-indigo-400" />}
+                  </div>
+                  <span className="text-xs font-semibold leading-tight line-clamp-2">
+                    {toast.message}
+                  </span>
+                </div>
+                <button
+                  onClick={() => removeToast(toast.id)}
+                  className="p-1 text-white/50 hover:text-white rounded-lg transition-colors shrink-0 cursor-pointer"
+                >
+                  <X size={14} />
+                </button>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </div>
     </AppContext.Provider>
   );
 }
