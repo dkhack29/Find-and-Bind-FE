@@ -23,7 +23,23 @@ declare module "axios" {
   }
 }
 
-const BASE_URL = import.meta.env.VITE_BASE_URL as string;
+const getBaseUrl = (): string => {
+  const envUrl = (import.meta.env.VITE_BASE_URL as string) || "";
+  // Check if running inside Capacitor native container, mobile webview, or production without local proxy
+  const isCapacitor = typeof window !== "undefined" && (
+    window.location.protocol === "capacitor:" ||
+    (window as any).Capacitor?.isNativePlatform?.() ||
+    (window.location.hostname === "localhost" && window.location.port === "")
+  );
+
+  if (isCapacitor || (envUrl.startsWith("/") && import.meta.env.PROD)) {
+    const cleanPath = envUrl.startsWith("/") ? envUrl : "/" + envUrl;
+    return `https://find-and-bind-be.onrender.com${cleanPath.endsWith("/") ? cleanPath : cleanPath + "/"}`;
+  }
+  return envUrl || "https://find-and-bind-be.onrender.com/api/";
+};
+
+const BASE_URL = getBaseUrl();
 
 /**
  * ============================================================
@@ -122,14 +138,18 @@ function getSafeRedirectPath(path: string): string | null {
  * ============================================================
  */
 export function getAccessToken(): string | undefined {
-  return Cookies.get("accessToken");
+  return Cookies.get("accessToken") || localStorage.getItem("accessToken") || undefined;
 }
 function setTokens(accessToken?: string, refreshToken?: string) {
-  if (accessToken) Cookies.set("accessToken", accessToken, { expires: 1 / 144 }); // ~10 phút
+  if (accessToken) {
+    Cookies.set("accessToken", accessToken, { expires: 1 / 144 }); // ~10 phút
+    localStorage.setItem("accessToken", accessToken);
+  }
   if (refreshToken) localStorage.setItem("refreshToken", refreshToken);
 }
 function clearTokens() {
   Cookies.remove("accessToken");
+  localStorage.removeItem("accessToken");
   localStorage.removeItem("refreshToken");
 }
 

@@ -50,22 +50,27 @@ export interface AiItineraryResultDto {
 }
 
 export interface CreateItineraryActivityDto {
-  locationId: number;
+  locationId?: number | null;
   dayIndex: number; // 1..30
   plannedTime?: string | null; // "HH:mm:ss"
   notes?: string | null;
 }
 
-/** Body cho POST /api/Itinerary */
+/** Body cho POST /api/Itinerary và PUT /api/Itinerary/{id} */
 export interface CreateItineraryDto {
   title: string;
   startDate: string; // ISO date
   endDate: string; // ISO date
   coverImageUrl?: string | null;
-  details: CreateItineraryActivityDto[];
+  itinerary: ItineraryDayDto[];
 }
 
-/** Item trong danh sách — GET /api/Itinerary */
+/** DTO cho PATCH /api/Itinerary/{id}/publish */
+export interface SetPublishedDto {
+  isPublished: boolean;
+}
+
+/** Item trong danh sách — GET /api/Itinerary hoặc GET /api/Itinerary/published */
 export interface ItineraryListDto {
   id: number;
   title: string;
@@ -74,32 +79,37 @@ export interface ItineraryListDto {
   coverImageUrl?: string | null;
   totalDays: number;
   totalActivities: number;
+  isPublished?: boolean;
   createdAt: string;
 }
 
 export interface ItineraryActivityDto {
-  id: number;
-  locationId: number;
+  id?: number;
+  locationId?: number | null;
   locationName: string;
-  locationAddress: string;
+  locationAddress?: string;
+  unverifiedLocationName?: string | null;
+  isVerified?: boolean;
   dayIndex: number;
   plannedTime?: string | null;
   notes?: string | null;
 }
 
-/** Chi tiết — GET /api/Itinerary/{id} */
+/** Chi tiết — GET /api/Itinerary/{id} hoặc GET /api/Itinerary/published/{id} */
 export interface ItineraryDetailDto {
   id: number;
   title: string;
   startDate: string;
   endDate: string;
   coverImageUrl?: string | null;
+  isPublished?: boolean;
   createdAt: string;
   updatedAt?: string | null;
-  details: ItineraryActivityDto[];
+  details?: ItineraryActivityDto[];
+  itinerary?: ItineraryDayDto[];
 }
 
-/** Query params cho GET /api/Itinerary */
+/** Query params cho GET /api/Itinerary và GET /api/Itinerary/published */
 export interface ItineraryFilterDto {
   pageIndex?: number; // default 1
   pageSize?: number; // default 10

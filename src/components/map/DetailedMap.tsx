@@ -151,13 +151,15 @@ export default function DetailedMap({
     return merged;
   }, [selectedProvince, contextPlaces]);
 
-  // Filtered Places list
-  const filteredPlaces = places.filter(place => {
-    if (activeFilter === 'landmark') return place.category === 'landmark';
-    if (activeFilter === 'hotel') return place.category === 'hotel';
-    if (activeFilter === 'restaurant') return place.category === 'restaurant';
-    return true;
-  });
+  // Memoized Filtered Places list to prevent infinite re-renders & lag
+  const filteredPlaces = useMemo(() => {
+    return places.filter(place => {
+      if (activeFilter === 'landmark') return place.category === 'landmark';
+      if (activeFilter === 'hotel') return place.category === 'hotel';
+      if (activeFilter === 'restaurant') return place.category === 'restaurant';
+      return true;
+    });
+  }, [places, activeFilter]);
 
   // Inject Leaflet CSS dynamically into document head
   useEffect(() => {
@@ -190,6 +192,7 @@ export default function DetailedMap({
     const bounds = L.latLngBounds(southWest, northEast);
 
     const map = L.map(mapContainerRef.current, {
+      preferCanvas: true,
       center: initialCenter,
       zoom: initialZoom,
       zoomControl: false,
@@ -203,12 +206,13 @@ export default function DetailedMap({
     mapRef.current = map;
 
     const initialUrl = mapType === 'roadmap'
-      ? 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+      ? 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png'
       : 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
     const layer = L.tileLayer(initialUrl, {
       maxZoom: 19,
-      subdomains: mapType === 'roadmap' ? 'abcd' : [],
+      subdomains: mapType === 'roadmap' ? ['a', 'b', 'c'] : [],
+      attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
     tileLayerRef.current = layer;
 
@@ -237,7 +241,7 @@ export default function DetailedMap({
     } else {
       const userHtml = `
         <div class="relative w-8 h-8 flex items-center justify-center">
-          <div class="absolute inset-0 rounded-full bg-indigo-500/15 border border-indigo-400/10 scale-[2.2] animate-ping"></div>
+          <div class="absolute inset-0 rounded-full bg-indigo-500/15 border border-indigo-400/10 scale-[2.2] opacity-70"></div>
           <div class="absolute w-4 h-4 rounded-full bg-indigo-600 border-2 border-white shadow-[0_2px_8px_rgba(79,70,229,0.3)] flex items-center justify-center">
             <div class="w-1.5 h-1.5 rounded-full bg-white"></div>
           </div>
@@ -265,12 +269,13 @@ export default function DetailedMap({
     }
 
     const tileUrl = mapType === 'roadmap'
-      ? 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+      ? 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png'
       : 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
     const layer = L.tileLayer(tileUrl, {
       maxZoom: 19,
-      subdomains: mapType === 'roadmap' ? 'abcd' : [],
+      subdomains: mapType === 'roadmap' ? ['a', 'b', 'c'] : [],
+      attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
     tileLayerRef.current = layer;
   }, [mapType]);

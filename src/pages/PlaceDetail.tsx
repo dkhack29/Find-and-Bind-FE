@@ -17,43 +17,88 @@ export default function PlaceDetail() {
   const { 
     places, savedPlaceIds, toggleSavedPlace, reviews, addReview, user, 
     addCaseWithCoords, featureFlags, apiQuota, incrementQuota, savePlaceToCollection, tasteCollections,
-    rescuePicks
+    rescuePicks, trips, addActivityToTrip, showToast
   } = useAppContext();
   
+  const rawId = String(id || '');
   const placeId = Number(id);
   const [serverPlace, setServerPlace] = useState<any>(null);
   const [serverReviews, setServerReviews] = useState<any[]>([]);
   const [reviewStats, setReviewStats] = useState<{ totalCount: number; averageRating: number } | null>(null);
+  const [isLoadingPlace, setIsLoadingPlace] = useState(true);
+  const [isAddingToTrip, setIsAddingToTrip] = useState(false);
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+
+  // Evidence file upload state for Report
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
+  const reportFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleEvidenceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setEvidenceFile(file);
+      const previewUrl = URL.createObjectURL(file);
+      setEvidencePreview(previewUrl);
+      showToast("Đã tải ảnh hóa đơn / bằng chứng thành công!", "success");
+    }
+  };
+
+  // Swipe-to-back gesture
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+  const handleSafeBack = () => {
+    if (window.history.length > 2) {
+      navigate(-1);
+    } else {
+      navigate('/map');
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartX;
+    if (deltaX > 75) {
+      handleSafeBack();
+    }
+    setTouchStartX(null);
+  };
 
   const loadPlaceData = async () => {
-    if (!placeId) return;
-    try {
-      const locRes = await locationService.getById(placeId);
-      if (locRes?.data) setServerPlace(locRes.data);
-    } catch (err) {
-      console.log('Get location detail err:', err);
-    }
+    setIsLoadingPlace(true);
+    if (placeId && !isNaN(placeId)) {
+      try {
+        const locRes = await locationService.getById(placeId);
+        if (locRes?.data) setServerPlace(locRes.data);
+      } catch (err) {
+        console.log('Get location detail err:', err);
+      }
 
-    try {
-      const revRes = await reviewService.getByLocation(placeId, { pageIndex: 1, pageSize: 50 });
-      if (revRes?.data && Array.isArray(revRes.data)) setServerReviews(revRes.data);
-    } catch (err) {
-      console.log('Get reviews err:', err);
-    }
+      try {
+        const revRes = await reviewService.getByLocation(placeId, { pageIndex: 1, pageSize: 50 });
+        if (revRes?.data && Array.isArray(revRes.data)) setServerReviews(revRes.data);
+      } catch (err) {
+        console.log('Get reviews err:', err);
+      }
 
-    try {
-      const statsRes = await reviewService.getStats(placeId);
-      if (statsRes?.data) setReviewStats(statsRes.data);
-    } catch (err) {
-      console.log('Get stats err:', err);
+      try {
+        const statsRes = await reviewService.getStats(placeId);
+        if (statsRes?.data) setReviewStats(statsRes.data);
+      } catch (err) {
+        console.log('Get stats err:', err);
+      }
     }
+    setIsLoadingPlace(false);
   };
 
   useEffect(() => {
     loadPlaceData();
-  }, [placeId]);
+  }, [id]);
 
-  const basePlace = places.find(p => p.id === placeId) || rescuePicks.find(p => p.id === placeId);
+  const basePlace = places.find(p => String(p.id) === rawId || (!isNaN(placeId) && p.id === placeId)) || 
+                    rescuePicks.find(p => String(p.id) === rawId || (!isNaN(placeId) && p.id === placeId));
   const place = serverPlace ? {
     id: serverPlace.id,
     title: serverPlace.name,
@@ -116,6 +161,7 @@ export default function PlaceDetail() {
   const [showQuickReportSheet, setShowQuickReportSheet] = useState(false);
   const [quickReportStep, setQuickReportStep] = useState(1); // 1=select, 2=evidence/done
   const [generatedCaseId, setGeneratedCaseId] = useState("");
+  const [selectedQuickReportType, setSelectedQuickReportType] = useState("Giá vé khống / Sai niêm yết");
 
   // Phase 1: Travel Guidebook Modal (FR-12)
   const [showGuidebook, setShowGuidebook] = useState(false);
@@ -132,6 +178,10 @@ export default function PlaceDetail() {
 
   // Phase 1: Taste Collection saving dropdown
   const [showSaveDropdown, setShowSaveDropdown] = useState(false);
+  const [showAddToTripModal, setShowAddToTripModal] = useState(false);
+  const [targetTripId, setTargetTripId] = useState<number | null>(null);
+  const [targetDay, setTargetDay] = useState<number>(1);
+  const [targetTime, setTargetTime] = useState<string>('09:00');
 
   useEffect(() => {
     if (place) {
@@ -161,11 +211,58 @@ export default function PlaceDetail() {
     return () => clearTimeout(timer);
   }, [qrStep, timeLeft]);
 
-  if (!place) return <div className="p-8 text-center">Place not found</div>;
+  if (isLoadingPlace && !basePlace && !serverPlace) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-sm font-bold text-slate-600">Đang tải thông tin địa điểm...</p>
+      </div>
+    );
+  }
+
+  if (!place) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col justify-between p-6 text-center">
+        <div className="pt-6 flex items-center justify-start">
+          <button 
+            onClick={() => navigate(-1)} 
+            className="w-10 h-10 rounded-full bg-white shadow-sm border border-slate-200 flex items-center justify-center text-slate-700 active:scale-95 cursor-pointer"
+            aria-label="Quay lại"
+          >
+            <ChevronLeft size={22} />
+          </button>
+        </div>
+        <div className="my-auto py-12">
+          <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center mx-auto mb-4 text-slate-400">
+            <MapPin size={32} />
+          </div>
+          <h3 className="text-lg font-black text-slate-900 mb-2">Không tìm thấy địa điểm</h3>
+          <p className="text-xs text-slate-500 font-medium max-w-xs mx-auto mb-6">
+            Địa điểm này có thể đã bị gỡ bỏ hoặc đang cập nhật thông tin trong hệ thống.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <button 
+              onClick={() => navigate(-1)}
+              className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl active:scale-95 cursor-pointer transition-all"
+            >
+              Quay lại
+            </button>
+            <button 
+              onClick={() => navigate('/')}
+              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md active:scale-95 cursor-pointer transition-all"
+            >
+              Về trang Khám phá
+            </button>
+          </div>
+        </div>
+        <div className="pb-6" />
+      </div>
+    );
+  }
 
   const handleStartVerification = () => {
     if (!user || !user.loggedIn) {
-      alert("Vui lòng đăng nhập tại trang Cá nhân trước khi xác thực ghé thăm!");
+      showToast("Vui lòng đăng nhập tại trang Cá nhân trước khi xác thực ghé thăm!", "warning");
       navigate('/profile');
       return;
     }
@@ -182,7 +279,7 @@ export default function PlaceDetail() {
 
   const handleAddReview = async () => {
     if (!user || !user.loggedIn) {
-      alert("Vui lòng đăng nhập tại trang Cá nhân trước khi viết đánh giá!");
+      showToast("Vui lòng đăng nhập tại trang Cá nhân trước khi viết đánh giá!", "warning");
       navigate('/profile');
       return;
     }
@@ -220,8 +317,24 @@ export default function PlaceDetail() {
     setGeneratedCaseId(mockCaseId);
     
     // Auto-attach current place coordinates as actual GPS
-    addCaseWithCoords(place.title, type, place.lat ?? 10.7719, place.lon ?? 106.6983);
+    setSelectedQuickReportType(type);
     setQuickReportStep(2);
+  };
+
+  const handleFinishQuickReport = () => {
+    addCaseWithCoords(
+      place.title,
+      selectedQuickReportType || 'Báo cáo vi phạm',
+      place.lat ?? 10.7719,
+      place.lon ?? 106.6983,
+      evidencePreview || undefined,
+      generatedCaseId
+    );
+    showToast('Báo cáo vi phạm đã được gửi thành công!', 'success');
+    setShowQuickReportSheet(false);
+    setQuickReportStep(1);
+    setEvidenceFile(null);
+    setEvidencePreview(null);
   };
 
   // Phase 1: Local eSIM Register
@@ -253,7 +366,7 @@ export default function PlaceDetail() {
     <motion.div 
       initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
       transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-      className="absolute inset-0 z-40 bg-white overflow-y-auto no-scrollbar"
+      onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} className="absolute inset-0 z-40 bg-white overflow-y-auto no-scrollbar"
     >
       <div className={cn("w-full h-[45vh] relative", place.imageClass)}>
         <div className="absolute top-12 left-6 right-6 flex justify-between items-center z-10">
@@ -267,7 +380,7 @@ export default function PlaceDetail() {
             <button 
               onClick={() => {
                 navigator.clipboard.writeText(window.location.href);
-                alert("Đã sao chép link địa điểm!");
+                showToast("Đã sao chép liên kết địa điểm!", "success");
               }}
               className="w-12 h-12 frosted-glass-dark rounded-full flex items-center justify-center text-white active:scale-95 transition-transform"
             >
@@ -277,7 +390,7 @@ export default function PlaceDetail() {
               <button 
                 onClick={() => {
                   if (!user || !user.loggedIn) {
-                    alert("Vui lòng đăng nhập tại trang Cá nhân trước!");
+                    showToast("Vui lòng đăng nhập tại trang Cá nhân trước!", "warning");
                     navigate('/profile');
                     return;
                   }
@@ -304,7 +417,7 @@ export default function PlaceDetail() {
                         onClick={() => {
                           savePlaceToCollection(placeId, col);
                           setShowSaveDropdown(false);
-                          alert(`Đã lưu "${place.title}" vào bộ sưu tập "${col}"`);
+                          showToast(`Đã lưu "${place.title}" vào bộ sưu tập "${col}"!`, "success");
                         }}
                         className="w-full px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-xl text-left transition-colors"
                       >
@@ -323,7 +436,7 @@ export default function PlaceDetail() {
                           navigate('/profile');
                         }
                         setShowSaveDropdown(false);
-                        alert(`Đã thêm "${place.title}" vào Danh sách tránh xa (Avoid List). Địa điểm này sẽ được làm mờ trên bản đồ.`);
+                        showToast(`Đã thêm "${place.title}" vào Danh sách tránh xa. Địa điểm này sẽ được làm mờ trên bản đồ.`, "info");
                       }}
                       className="w-full px-3 py-2 text-xs font-extrabold text-red-600 hover:bg-red-50 rounded-xl text-left transition-colors"
                     >
@@ -622,7 +735,7 @@ export default function PlaceDetail() {
           <button 
             onClick={() => {
               if (!user || !user.loggedIn) {
-                alert("Vui lòng đăng nhập tại trang Cá nhân trước khi viết đánh giá!");
+                showToast("Vui lòng đăng nhập tại trang Cá nhân trước khi viết đánh giá!", "warning");
                 navigate('/profile');
                 return;
               }
@@ -635,7 +748,7 @@ export default function PlaceDetail() {
           <button 
             onClick={() => {
               if (!user || !user.loggedIn) {
-                alert("Vui lòng đăng nhập tại trang Cá nhân trước khi gửi báo cáo!");
+                showToast("Vui lòng đăng nhập tại trang Cá nhân trước khi gửi phản ánh!", "warning");
                 navigate('/profile');
                 return;
               }
@@ -656,7 +769,7 @@ export default function PlaceDetail() {
           <button 
             onClick={() => {
               if (!user || !user.loggedIn) {
-                alert("Vui lòng đăng nhập tại trang Cá nhân trước khi thêm vào kế hoạch!");
+                showToast("Vui lòng đăng nhập tại trang Cá nhân trước khi thêm vào kế hoạch!", "warning");
                 navigate('/profile');
                 return;
               }
@@ -675,7 +788,7 @@ export default function PlaceDetail() {
           <button 
             onClick={() => {
               if (!user || !user.loggedIn) {
-                alert("Vui lòng đăng nhập trước!");
+                showToast("Vui lòng đăng nhập trước khi thao tác!", "warning");
                 navigate('/profile');
                 return;
               }
@@ -742,21 +855,47 @@ export default function PlaceDetail() {
                   <p className="text-xs text-indigo-600 font-black mb-4">Case ID: {generatedCaseId}</p>
                   
                   <div className="bg-slate-50 p-4 border border-slate-200 rounded-2xl text-left mb-6 text-[11px] font-medium text-slate-600 space-y-1.5">
-                    <div>POI: <span className="font-extrabold text-slate-800">{place.title}</span></div>
+                    <div>Địa điểm: <span className="font-extrabold text-slate-800">{place.title}</span></div>
                     <div>GPS Coords: <span className="font-extrabold text-slate-800">[{place.lat?.toFixed(4)}, {place.lon?.toFixed(4)}]</span></div>
                     <div>Thời hạn SLA xử lý: <span className="font-extrabold text-amber-600">4 Giờ</span></div>
                   </div>
 
                   <div className="mb-6">
                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide text-left mb-2">Chụp hóa đơn / bằng chứng nhanh (Tùy chọn)</label>
-                    <div className="w-full h-24 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-slate-400 font-bold text-xs cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
-                      <Camera size={20} className="mb-1 text-slate-300" />
-                      <span>+ Tải ảnh hóa đơn thanh toán</span>
-                    </div>
+                    <input 
+                      type="file" 
+                      ref={reportFileInputRef} 
+                      accept="image/*" 
+                      className="hidden" 
+                      onChange={handleEvidenceFileChange} 
+                    />
+                    {evidencePreview ? (
+                      <div className="relative w-full h-32 rounded-2xl overflow-hidden border-2 border-indigo-200 group bg-slate-100">
+                        <img src={evidencePreview} alt="Hóa đơn" className="w-full h-full object-cover" />
+                        <button 
+                          type="button" 
+                          onClick={() => { setEvidenceFile(null); setEvidencePreview(null); }}
+                          className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white p-1.5 rounded-full transition-colors cursor-pointer"
+                        >
+                          <X size={14} />
+                        </button>
+                        <div className="absolute bottom-2 left-2 bg-emerald-600/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1 shadow-sm">
+                          <CheckSquare size={12} /> Đã đính kèm ảnh bằng chứng
+                        </div>
+                      </div>
+                    ) : (
+                      <div 
+                        onClick={() => reportFileInputRef.current?.click()}
+                        className="w-full h-24 border-2 border-dashed border-indigo-200 rounded-2xl flex flex-col items-center justify-center text-indigo-600 font-bold text-xs cursor-pointer bg-indigo-50/50 hover:bg-indigo-50 transition-colors"
+                      >
+                        <Camera size={22} className="mb-1 text-indigo-500" />
+                        <span>+ Bấm để tải ảnh hóa đơn thanh toán</span>
+                      </div>
+                    )}
                   </div>
 
                   <button 
-                    onClick={() => setShowQuickReportSheet(false)}
+                    onClick={handleFinishQuickReport}
                     className="w-full py-4 bg-slate-900 text-white font-bold rounded-2xl active:scale-95 transition-all cursor-pointer"
                   >
                     Hoàn tất
@@ -1004,7 +1143,7 @@ export default function PlaceDetail() {
               <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-2 shrink-0">
                 <button 
                   onClick={() => {
-                    alert("Đã kết xuất và tải xuống file PDF báo cáo lưu trú!");
+                    showToast("Đã kết xuất và tải xuống xác nhận lưu trú thành công!", "success");
                     setShowPdfModal(false);
                   }}
                   className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
@@ -1169,12 +1308,12 @@ export default function PlaceDetail() {
                <button 
                  onClick={() => {
                     if (!user || !user.loggedIn) {
-                      alert("Vui lòng đăng nhập tại trang Cá nhân trước khi gửi báo cáo!");
+                      showToast("Vui lòng đăng nhập tại trang Cá nhân trước khi gửi báo cáo!", "warning");
                       navigate('/profile');
                       return;
                     }
                     addCaseWithCoords(place.title, reportType, place.lat ?? 10.7719, place.lon ?? 106.6983);
-                    alert('Đã gửi báo cáo thành công! Mã Case ID đã được tạo để bạn theo dõi trong hồ sơ.');
+                    showToast('Đã gửi phản ánh thành công! Đội ngũ điều phối sẽ kiểm tra trong 24h.', 'success');
                     setShowReportModal(false);
                  }}
                  disabled={!reportType}

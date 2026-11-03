@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Sparkles, Calendar, MapPin, PlusSquare, Camera, SlidersHorizontal, Navigation, AlertTriangle, ArrowRight, WifiOff, RefreshCw, Layers, Check, Users, Edit3, Eye } from 'lucide-react';
+import { ChevronLeft, Sparkles, Calendar, MapPin, PlusSquare, Camera, SlidersHorizontal, Navigation, AlertTriangle, ArrowRight, WifiOff, RefreshCw, Layers, Check, Users, Edit3, Eye, Globe, Lock, Save } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { cn } from '../App';
 import ItineraryDetailModal from '../components/planner/ItineraryDetailModal';
+import { itineraryService } from '@/services/itinerary/itineraryApi';
 
 export default function TripDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { trips, lamportEvents, syncLamportEvents } = useAppContext();
+  const { trips, lamportEvents, syncLamportEvents, togglePublishTrip, showToast, addActivityToTrip, deleteActivityFromTrip } = useAppContext();
   
   const [isGuideMode, setIsGuideMode] = useState(false);
   const [showIncident, setShowIncident] = useState(false);
@@ -33,8 +34,73 @@ export default function TripDetail() {
   // Filter View mode (Collaborative vs Personal) (FR-15)
   const [viewMode, setViewMode] = useState<'all' | 'personal'>('all');
   const [showItineraryModal, setShowItineraryModal] = useState(false);
+  const [isSavingServer, setIsSavingServer] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+
+  // Swipe-to-back gesture
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartX;
+    if (deltaX > 75) {
+      navigate(-1);
+    }
+    setTouchStartX(null);
+  };
 
   const trip = trips.find(t => t.id === Number(id)) || trips[0];
+
+  const handleTogglePublish = async () => {
+    setIsPublishing(true);
+    try {
+      await togglePublishTrip(trip.id, !trip.isPublished);
+      showToast(trip.isPublished 
+        ? "Đã chuyển lịch trình về chế độ riêng tư!" 
+        : "Đã công khai lịch trình lên kho mẫu cộng đồng!",
+        "success"
+      );
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || "Không thể đổi trạng thái công khai.", "error");
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  const handleSaveToServer = async () => {
+    setIsSavingServer(true);
+    try {
+      const updatePayload = {
+        title: trip.name,
+        startDate: new Date().toISOString(),
+        endDate: new Date(Date.now() + (trip.days || 3) * 24 * 3600 * 1000).toISOString(),
+        coverImageUrl: null,
+        itinerary: (trip.itinerary || []).map(d => ({
+          day: d.day,
+          activities: (d.activities || []).map(act => ({
+            time: act.time || '08:00',
+            location: act.location,
+            description: act.description,
+            matchedLocationId: act.matchedLocationId ?? null,
+            isVerified: !!act.isVerified
+          }))
+        }))
+      };
+
+      await itineraryService.update(trip.id, updatePayload);
+      showToast("Đã cập nhật lịch trình lên máy chủ thành công!", "success");
+    } catch (err: any) {
+      if (err?.status === 409 || err?.statusCode === 409 || err?.response?.status === 409) {
+        showToast("Lịch trình đang Công khai nên không thể sửa trực tiếp. Vui lòng gỡ công khai trước!", "warning");
+      } else {
+        showToast(err?.response?.data?.message || err?.message || "Lỗi khi lưu lịch trình lên máy chủ!", "error");
+      }
+    } finally {
+      setIsSavingServer(false);
+    }
+  };
 
   // Sync effect when going online
   const handleToggleOffline = () => {
@@ -229,9 +295,16 @@ export default function TripDetail() {
               </button>
             </h1>
           )}
-          <div className="flex gap-3 text-white/90 text-sm font-medium">
+          <div className="flex gap-2 text-white/90 text-sm font-medium flex-wrap items-center">
             <span className="flex items-center gap-1.5 bg-black/20 px-2 py-1 rounded-lg backdrop-blur-sm"><Calendar size={14} /> {trip.days} ngày</span>
             <span className="flex items-center gap-1.5 bg-black/20 px-2 py-1 rounded-lg backdrop-blur-sm"><MapPin size={14} /> {trip.location}</span>
+            <span className={cn(
+              "flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold backdrop-blur-sm",
+              trip.isPublished ? "bg-emerald-600/80 text-white" : "bg-white/20 text-white"
+            )}>
+              {trip.isPublished ? <Globe size={12} /> : <Lock size={12} />}
+              {trip.isPublished ? "Công khai" : "Riêng tư"}
+            </span>
           </div>
         </div>
       </div>
@@ -253,9 +326,9 @@ export default function TripDetail() {
           <button 
             onClick={() => {
               navigator.clipboard.writeText(window.location.href);
-              alert("Đã sao chép link mời bạn bè!");
+              showToast("Đã sao chép liên kết mời bạn bè!", "success");
             }}
-            className="text-sm font-bold text-indigo-600 bg-indigo-50 px-4 py-2 rounded-xl active:scale-95 transition-transform"
+            className="text-sm font-bold text-indigo-600 bg-indigo-50 px-4 py-2 rounded-xl active:scale-95 transition-transform cursor-pointer"
           >
             Mời bạn bè
           </button>
@@ -281,6 +354,43 @@ export default function TripDetail() {
           >
             <Layers size={14}/> Ý kiến Cá nhân
           </button>
+        </div>
+
+        {/* Quick Operations Bar: View Popup, Publish/Unpublish, Save to Server */}
+        <div className="bg-white rounded-2xl p-4 mb-6 shadow-sm border border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+          <button
+            onClick={() => setShowItineraryModal(true)}
+            className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+          >
+            <Eye size={14} />
+            <span>Xem chi tiết lịch trình</span>
+          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              disabled={isPublishing}
+              onClick={handleTogglePublish}
+              className={cn(
+                "px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 disabled:opacity-50 cursor-pointer flex items-center gap-1.5",
+                trip.isPublished 
+                  ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200" 
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+              )}
+            >
+              {trip.isPublished ? <Globe size={13} className="text-emerald-600" /> : <Lock size={13} />}
+              <span>{isPublishing ? "Đang xử lý..." : trip.isPublished ? "Đang công khai" : "Công khai"}</span>
+            </button>
+
+            <button
+              disabled={isSavingServer}
+              onClick={handleSaveToServer}
+              className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all active:scale-95 disabled:opacity-50 cursor-pointer flex items-center gap-1.5 shadow-sm"
+              title="Lưu toàn bộ thay đổi lên máy chủ (PUT /api/Itinerary/{id})"
+            >
+              <Save size={13} />
+              <span>{isSavingServer ? "Đang lưu..." : "Lưu máy chủ"}</span>
+            </button>
+          </div>
         </div>
 
         {/* Phase 2: Lamport Chain Sync Console (FR-15, FR-16) */}
@@ -510,7 +620,7 @@ export default function TripDetail() {
                  <button onClick={() => {
                    setShowIncident(false);
                    setIsGuideMode(false);
-                   alert('Đã cập nhật lịch trình sang Bảo tàng Lịch sử. Version mới: Plan_v1.1');
+                   showToast('Đã cập nhật lịch trình sang Bảo tàng Lịch sử!', 'success');
                  }} className="flex-[2] bg-slate-900 text-white font-bold rounded-2xl py-4 shadow-lg shadow-slate-900/20 active:scale-95 transition-transform tracking-wide text-sm flex items-center justify-center gap-2">
                    Cập nhật lịch trình <ArrowRight size={16}/>
                  </button>
@@ -560,9 +670,9 @@ export default function TripDetail() {
                    onClick={() => {
                      setHasUnsyncedChanges(false);
                      setShowConflictModal(false);
-                     alert("Đã đồng bộ thành công! Giữ nguyên bản sửa của bạn.");
+                     showToast("Đã đồng bộ thành công! Giữ nguyên bản chỉnh sửa của bạn.", "success");
                    }}
-                   className="flex-1 bg-slate-900 text-white text-xs font-bold rounded-xl py-3 active:scale-95 transition-all"
+                   className="flex-1 bg-slate-900 text-white text-xs font-bold rounded-xl py-3 active:scale-95 transition-all cursor-pointer"
                  >
                    Giữ bản của Tôi
                  </button>
@@ -571,9 +681,9 @@ export default function TripDetail() {
                      trip.name = "Chuyến đi Huế & Đà Nẵng (Shared)";
                      setHasUnsyncedChanges(false);
                      setShowConflictModal(false);
-                     alert("Đã đồng bộ thành công! Ghi đè bằng bản trên Máy chủ.");
+                     showToast("Đã đồng bộ thành công! Đã cập nhật theo phiên bản mới nhất.", "success");
                    }}
-                   className="flex-1 bg-slate-100 text-slate-600 text-xs font-bold rounded-xl py-3 active:scale-95 transition-all"
+                   className="flex-1 bg-slate-100 text-slate-600 text-xs font-bold rounded-xl py-3 active:scale-95 transition-all cursor-pointer"
                  >
                    Lấy bản Máy chủ
                  </button>

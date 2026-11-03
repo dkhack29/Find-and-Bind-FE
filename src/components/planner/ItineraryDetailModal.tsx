@@ -1,12 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, Calendar, Clock, MapPin, ShieldCheck, Sparkles, Navigation, 
   ChevronDown, ChevronUp, CheckCircle2, Circle, ExternalLink, Compass,
-  Share2, ArrowRight, Info, AlertCircle
+  Share2, ArrowRight, Info, AlertCircle, Globe, Lock, Copy, Check
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { Trip, TripDay, TripActivity } from '../../context/AppContext';
+import { Trip, TripDay, TripActivity, useAppContext } from '../../context/AppContext';
 import { cn } from '../../App';
 
 interface ItineraryDetailModalProps {
@@ -49,9 +49,63 @@ export default function ItineraryDetailModal({
   trip
 }: ItineraryDetailModalProps) {
   const navigate = useNavigate();
+  const { togglePublishTrip, clonePublishedTrip, user, showToast } = useAppContext();
   const [selectedDayFilter, setSelectedDayFilter] = useState<number | 'all'>('all');
   const [expandedActivityKeys, setExpandedActivityKeys] = useState<Record<string, boolean>>({});
   const [completedActivityKeys, setCompletedActivityKeys] = useState<Record<string, boolean>>({});
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [isCloning, setIsCloning] = useState(false);
+  const [actionNotice, setActionNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    if (actionNotice) {
+      const timer = setTimeout(() => setActionNotice(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [actionNotice]);
+
+  const handleTogglePublish = async () => {
+    if (!trip) return;
+    setIsPublishing(true);
+    setActionNotice(null);
+    try {
+      const nextState = !trip.isPublished;
+      await togglePublishTrip(trip.id, nextState);
+      setActionNotice({
+        type: 'success',
+        message: nextState 
+          ? 'Đã bật công khai lịch trình lên kho mẫu thành công!' 
+          : 'Đã chuyển lịch trình về chế độ riêng tư.'
+      });
+    } catch (err: any) {
+      setActionNotice({
+        type: 'error',
+        message: err?.response?.data?.message || 'Không thể đổi trạng thái công khai. Vui lòng thử lại!'
+      });
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  const handleClone = async () => {
+    if (!trip) return;
+    setIsCloning(true);
+    setActionNotice(null);
+    try {
+      await clonePublishedTrip(trip.id);
+      setActionNotice({
+        type: 'success',
+        message: 'Đã sao chép lịch trình vào danh sách chuyến đi của bạn!'
+      });
+    } catch (err: any) {
+      setActionNotice({
+        type: 'error',
+        message: err?.response?.data?.message || 'Sao chép thất bại. Vui lòng thử lại!'
+      });
+    } finally {
+      setIsCloning(false);
+    }
+  };
 
   // Sort days ascending: Day 1 first, then Day 2, Day 3...
   const sortedDays = useMemo(() => {
@@ -146,8 +200,77 @@ export default function ItineraryDetailModal({
             </span>
           </div>
 
+          {/* Published/Private & Clone Actions Bar */}
+          <div className="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-slate-100">
+            <div className="flex items-center gap-1.5">
+              {trip.isPublished ? (
+                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black uppercase px-2 py-0.5 rounded-lg flex items-center gap-1">
+                  <Globe size={11} /> Công khai
+                </span>
+              ) : (
+                <span className="bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-black uppercase px-2 py-0.5 rounded-lg flex items-center gap-1">
+                  <Lock size={11} /> Riêng tư
+                </span>
+              )}
+              <span className="text-[10.5px] text-slate-400 font-medium">
+                {trip.isPublished ? 'Mẫu công khai (Redis)' : 'Chỉ bạn có thể xem'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              {user?.loggedIn && (
+                <button
+                  disabled={isPublishing}
+                  onClick={handleTogglePublish}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 cursor-pointer flex items-center gap-1"
+                >
+                  {isPublishing ? (
+                    'Đang lưu...'
+                  ) : trip.isPublished ? (
+                    <>
+                      <Lock size={11} /> Gỡ công khai
+                    </>
+                  ) : (
+                    <>
+                      <Globe size={11} /> Công khai
+                    </>
+                  )}
+                </button>
+              )}
+              <button
+                disabled={isCloning}
+                onClick={handleClone}
+                className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 cursor-pointer flex items-center gap-1"
+                title="Sao chép lịch trình thành bản riêng tư"
+              >
+                <Copy size={11} />
+                <span>{isCloning ? 'Đang chép...' : 'Sao chép'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Action Feedback Notice Toast */}
+          <AnimatePresence>
+            {actionNotice && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className={cn(
+                  "mt-2 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5",
+                  actionNotice.type === 'success' 
+                    ? "bg-emerald-50 text-emerald-800 border border-emerald-200" 
+                    : "bg-rose-50 text-rose-800 border border-rose-200"
+                )}
+              >
+                {actionNotice.type === 'success' ? <Check size={13} /> : <AlertCircle size={13} />}
+                <span>{actionNotice.message}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Day Navigation Tabs */}
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pt-3.5 pb-1">
+          <div className="flex gap-2 overflow-x-auto no-scrollbar pt-3 pb-1">
             <button
               onClick={() => setSelectedDayFilter('all')}
               className={cn(
@@ -303,13 +426,14 @@ export default function ItineraryDetailModal({
                                   </span>
 
                                   {act.isVerified ? (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/60">
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/60" title="Địa điểm đã được xác minh và liên kết với địa điểm thực tế trên hệ thống">
                                       <ShieldCheck size={11} className="text-emerald-600" />
-                                      Đã xác minh
+                                      Đã liên kết hệ thống
                                     </span>
                                   ) : (
-                                    <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
-                                      Khám phá
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60" title="Địa điểm do AI gợi ý, lưu tên dự phòng an toàn ngoài cơ sở dữ liệu">
+                                      <Sparkles size={11} className="text-amber-500" />
+                                      Gợi ý AI (Địa điểm ngoài DB)
                                     </span>
                                   )}
                                 </div>
@@ -321,21 +445,21 @@ export default function ItineraryDetailModal({
                                 </p>
                               </div>
 
-                              {/* Toggle Check & Expand Buttons */}
-                              <div className="flex items-center gap-1 shrink-0 ml-1">
+                              {/* Toggle Check & Expand Buttons - Spaced out clearly */}
+                              <div className="flex items-center gap-2 shrink-0 ml-2">
                                 <button
                                   onClick={(e) => toggleCompleteActivity(e, activityKey)}
-                                  className="p-1 text-slate-400 hover:text-emerald-600 transition-colors"
+                                  className="w-8 h-8 rounded-full bg-slate-50 hover:bg-emerald-50 border border-slate-200/80 flex items-center justify-center text-slate-400 hover:text-emerald-600 transition-all cursor-pointer active:scale-95"
                                   title={isCompleted ? "Đánh dấu chưa làm" : "Đánh dấu đã hoàn thành"}
                                 >
                                   {isCompleted ? (
-                                    <CheckCircle2 size={20} className="text-emerald-600 fill-emerald-50" />
+                                    <CheckCircle2 size={18} className="text-emerald-600 fill-emerald-50" />
                                   ) : (
-                                    <Circle size={20} />
+                                    <Circle size={18} />
                                   )}
                                 </button>
-                                <div className="p-1 text-slate-400">
-                                  {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                                <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-200/80 flex items-center justify-center text-slate-400">
+                                  {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                                 </div>
                               </div>
                             </div>

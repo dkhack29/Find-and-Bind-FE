@@ -4,7 +4,7 @@ import { Compass, Map as MapIcon, PlusSquare, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { AppProvider } from './context/AppContext';
+import { AppProvider, useAppContext } from './context/AppContext';
 
 // Import Pages
 import Discovery from './pages/Discovery';
@@ -32,7 +32,7 @@ function MainLayout() {
     setNavigator(navigate);
   }, [navigate]);
 
-  const hideNavRoutes = ['/place/', '/plan/new', '/plan/detail/', '/profile/cases', '/admin/dispatch', '/admin/poi', '/auth/', '/login'];
+  const hideNavRoutes = ['/place/', '/plan/new', '/plan/detail/', '/profile/cases', '/admin/dispatch', '/admin/poi'];
   const shouldHideNav = 
     hideNavRoutes.some(path => location.pathname.includes(path)) ||
     (location.pathname === '/map' && location.search.includes('routing=true'));
@@ -71,7 +71,7 @@ function MainLayout() {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
               transition={{ type: "spring", stiffness: 260, damping: 20 }}
-              className="absolute bottom-0 w-full px-6 pb-8 pt-4 pointer-events-none z-30"
+              className="absolute bottom-0 w-full px-5 pb-[max(1.75rem,env(safe-area-inset-bottom,20px))] pt-3 pointer-events-none z-30"
             >
               <div className="frosted-glass rounded-[28px] h-[72px] flex items-center justify-around px-2 pointer-events-auto border border-white/60 shadow-soft">
                 <NavItem to="/" icon={<Compass size={24} />} title="Khám phá" />
@@ -89,7 +89,7 @@ function MainLayout() {
 
 function NavItem({ to, icon, title }: { to: string, icon: React.ReactNode, title: string }) {
   const location = useLocation();
-  const isActive = location.pathname === to || (to === '/' && !['/plan', '/map', '/profile'].includes(location.pathname));
+  const isActive = location.pathname === to || (to === '/profile' && ['/auth/login', '/login'].includes(location.pathname)) || (to === '/' && !['/plan', '/map', '/profile', '/auth/login', '/login'].includes(location.pathname));
   const navigate = useNavigate();
 
   return (

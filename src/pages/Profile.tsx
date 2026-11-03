@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Turnstile } from '@marsidev/react-turnstile';
 import { 
-  Settings, User, Bell, Bookmark, ShieldCheck, MapPin, Plus, Store, 
+  ChevronLeft, Settings, User, Bell, Bookmark, ShieldCheck, MapPin, Plus, Store, 
   Navigation, Star, Shield, Database, Scale, DollarSign, Lock, Camera, 
   Video, Eye, AlertCircle, Fingerprint, Trash, Trash2, Check, X, RefreshCw, Smartphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppContext } from '../context/AppContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { cn } from '../App';
 import { userService } from '@/services/user/userApi';
 import { reviewService } from '@/services/review/reviewApi';
@@ -17,7 +17,7 @@ import AuthForm from '../components/AuthForm';
 export default function Profile() {
   const { 
     role, setRole, places, savedPlaceIds, reviews, 
-    user, login, logout, deleteAccount, privacySettings, updatePrivacySettings,
+    user, login, logout, deleteAccount, scheduleAccountDeletion, privacySettings, updatePrivacySettings,
     
     // Phase 1 Context
     featureFlags, updateFeatureFlags, apiQuota, incrementQuota,
@@ -26,7 +26,8 @@ export default function Profile() {
     updateMerchantWallet, appeals, submitAppeal,
 
     // Phase 2 Context
-    legalHoldActive, setLegalHoldActive, purgeLogs, runPurgeWorker, checkPoiFingerprint
+    legalHoldActive, setLegalHoldActive, purgeLogs, runPurgeWorker, checkPoiFingerprint,
+    showToast
   } = useAppContext();
 
   useEffect(() => {
@@ -39,6 +40,27 @@ export default function Profile() {
   }, [user]);
 
   const navigate = useNavigate();
+
+  // Mobile swipe-to-back gesture
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [touchStartY, setTouchStartY] = useState<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+    setTouchStartY(e.touches[0].clientY);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null || touchStartY === null) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartX;
+    const deltaY = e.changedTouches[0].clientY - touchStartY;
+    // Swipe from left edge (>70px horizontal, <55px vertical)
+    if (touchStartX < 60 && deltaX > 75 && Math.abs(deltaY) < 55) {
+      navigate(-1);
+    }
+    setTouchStartX(null);
+    setTouchStartY(null);
+  };
   const [showAddPlace, setShowAddPlace] = useState(false);
   const [emailInput, setEmailInput] = useState("");
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -104,7 +126,7 @@ export default function Profile() {
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!captchaToken) {
-      alert("Vui lòng hoàn thành Captcha bảo mật để tiếp tục.");
+      showToast("Vui lòng hoàn thành Captcha bảo mật để tiếp tục.", "warning");
       return;
     }
     if (emailInput.trim()) {
@@ -115,7 +137,7 @@ export default function Profile() {
   const handleDeleteAccount = () => {
     deleteAccount();
     setShowDeleteConfirm(false);
-    alert("Tài khoản của bạn đã được xóa hoàn toàn khỏi hệ thống (RTBF - Tuân thủ Nghị định 13).");
+    showToast("Tài khoản của bạn đã được xóa hoàn toàn khỏi hệ thống.", "info");
     navigate('/');
   };
 
@@ -143,7 +165,7 @@ export default function Profile() {
     // Increment API quota tracking VNPT L3 eKYC
     incrementQuota('vnptEkyc');
     setShowEkycModal(false);
-    alert("Xác thực định danh VNPT eKYC L3 thành công!");
+    showToast("Xác thực định danh L3 thành công!", "success");
   };
 
   // Merchant Appeal Submitter
@@ -156,7 +178,7 @@ export default function Profile() {
 
   const handleAppealStep1 = () => {
     if (merchantWalletBalance < 1000000) {
-      alert("Ví của bạn không đủ tiền đặt cọc kháng cáo (Yêu cầu tối thiểu 1,000,000đ).");
+      showToast("Số dư ví không đủ để đặt cọc (Tối thiểu 1.000.000đ).", "warning");
       return;
     }
     // Deduct fee
@@ -166,7 +188,7 @@ export default function Profile() {
 
   const handleAppealStep2 = () => {
     if (!appealEvidence.trim()) {
-      alert("Vui lòng ghi giải trình kháng nghị.");
+      showToast("Vui lòng nhập nội dung giải trình.", "warning");
       return;
     }
     setAppealStep(3);
@@ -203,14 +225,91 @@ export default function Profile() {
     }
   };
 
+  const location = useLocation();
+
+  // Auto replace path for clean state
+  useEffect(() => {
+    if ((location.pathname === '/auth/login' || location.pathname === '/login') && user?.loggedIn) {
+      navigate('/profile', { replace: true });
+    }
+  }, [location.pathname, user?.loggedIn]);
+
+  const handleGoBack = () => {
+    const params = new URLSearchParams(location.search);
+    const redirect = params.get('redirect');
+    if (redirect) {
+      navigate(redirect);
+      return;
+    }
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/map');
+    }
+  };
+
+  const handleClose = () => {
+    const params = new URLSearchParams(location.search);
+    const redirect = params.get('redirect');
+    if (redirect) {
+      navigate(redirect);
+    } else {
+      navigate('/map');
+    }
+  };
+
+  const handleAuthSuccess = () => {
+    showToast("Đăng nhập thành công!", "success");
+    const params = new URLSearchParams(location.search);
+    const redirect = params.get('redirect');
+    if (redirect) {
+      navigate(redirect);
+    } else if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/map');
+    }
+  };
+
   if (!user || !user.loggedIn) {
     return (
       <motion.div 
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="h-full bg-slate-50 flex items-center justify-center p-4 overflow-y-auto no-scrollbar"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        className="h-full bg-slate-50 flex flex-col overflow-y-auto no-scrollbar relative"
       >
-        <div className="w-full py-8">
-          <AuthForm />
+        {/* Sticky Top Header with Back & Close/Map buttons */}
+        <div className="sticky top-0 z-40 bg-white/95 backdrop-blur-md px-4 py-3 border-b border-slate-100 flex items-center justify-between shadow-xs shrink-0">
+          <button
+            type="button"
+            onClick={handleGoBack}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+            aria-label="Quay lại"
+          >
+            <ChevronLeft size={18} />
+            <span>Quay lại</span>
+          </button>
+          
+          <h2 className="text-sm font-black text-slate-800 tracking-tight">
+            Đăng nhập / Đăng ký
+          </h2>
+
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center active:scale-95 transition-all cursor-pointer shadow-2xs"
+            title="Đóng / Về bản đồ"
+            aria-label="Đóng"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="w-full flex-1 flex items-center justify-center p-4 pb-44">
+          <div className="w-full">
+            <AuthForm onSuccess={handleAuthSuccess} />
+          </div>
         </div>
       </motion.div>
     );
@@ -219,10 +318,39 @@ export default function Profile() {
   return (
     <motion.div 
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="h-full overflow-y-auto no-scrollbar bg-slate-50 pb-32 text-left"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      className="h-full overflow-y-auto no-scrollbar bg-slate-50 pb-32 text-left relative"
     >
+      {/* Sticky Top Header with Back & Close/Map buttons */}
+      <div className="sticky top-0 z-40 bg-white/95 backdrop-blur-md px-4 py-3 border-b border-slate-100 flex items-center justify-between shadow-xs">
+        <button
+          type="button"
+          onClick={handleGoBack}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+          aria-label="Quay lại"
+        >
+          <ChevronLeft size={18} />
+          <span>Quay lại</span>
+        </button>
+        
+        <h2 className="text-sm font-black text-slate-800 tracking-tight">
+          Tài khoản của tôi
+        </h2>
+
+        <button
+          type="button"
+          onClick={handleClose}
+          className="w-8 h-8 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-600 flex items-center justify-center active:scale-95 transition-all cursor-pointer shadow-2xs"
+          title="Về Bản đồ"
+          aria-label="Về Bản đồ"
+        >
+          <X size={18} />
+        </button>
+      </div>
+
       {/* Profile Header */}
-      <div className="pt-16 px-6 pb-6 text-center relative bg-white border-b border-slate-100 shadow-sm rounded-b-[40px] z-10">
+      <div className="pt-8 px-6 pb-6 text-center relative bg-white border-b border-slate-100 shadow-sm rounded-b-[40px] z-10">
         <div className="w-20 h-20 bg-gradient-to-tr from-indigo-100 to-purple-100 rounded-[32px] mx-auto mb-4 p-1 shadow-sm rotate-3">
           <div className="w-full h-full bg-white rounded-[28px] -rotate-3 overflow-hidden">
             <img src={`https://api.dicebear.com/7.x/notionists/svg?seed=${user.email}`} alt="avatar" className="w-full h-full object-cover p-2"/>
@@ -257,7 +385,7 @@ export default function Profile() {
         {user.isVerifiedL3 ? (
           <div className="inline-flex flex-col items-center bg-green-50 border border-green-200/80 px-4 py-2.5 rounded-2xl max-w-[280px] mb-4">
             <div className="flex items-center gap-1.5 text-green-700 text-[10.5px] font-black uppercase tracking-wider">
-              <ShieldCheck size={14} /> VNPT eKYC L3: ĐÃ XÁC THỰC
+              <ShieldCheck size={14} /> Đã xác thực danh tính
             </div>
             <span className="font-mono text-[8.5px] text-green-600 mt-1 select-all break-all line-clamp-1 w-full text-center">
               {user.ekycHash}
@@ -266,13 +394,13 @@ export default function Profile() {
         ) : (
           <div className="inline-flex flex-col items-center bg-indigo-50/50 border border-indigo-100/80 px-4 py-2.5 rounded-2xl max-w-[280px] mb-4">
             <div className="flex items-center gap-1.5 text-indigo-700 text-[10.5px] font-black uppercase tracking-wider">
-              <Lock size={12} className="text-indigo-600 animate-pulse" /> VNPT eKYC L3: CHƯA XÁC THỰC
+              <Lock size={12} className="text-indigo-600 animate-pulse" /> Xác thực danh tính (eKYC)
             </div>
             <button 
               onClick={handleStartEkyc}
               className="mt-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[9.5px] font-black uppercase px-3 py-1.5 rounded-lg active:scale-95 transition-all cursor-pointer"
             >
-              Định danh L3 (VNPT eKYC)
+              Xác thực tài khoản ngay
             </button>
           </div>
         )}
@@ -336,7 +464,7 @@ export default function Profile() {
                     if (amt > 0) {
                       updateMerchantWallet(merchantWalletBalance + amt);
                       setDepositAmount("");
-                      alert(`Đã nạp thành công ${amt.toLocaleString('vi-VN')}đ vào ví!`);
+                      showToast(`Đã nạp thành công ${amt.toLocaleString('vi-VN')}đ vào ví!`, "success");
                     }
                   }}
                   className="bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-black uppercase px-4 py-2 rounded-xl transition-all cursor-pointer"
@@ -482,7 +610,7 @@ export default function Profile() {
                       if (newCollectionName.trim()) {
                         addTasteCollection(newCollectionName.trim());
                         setNewCollectionName("");
-                        alert("Đã tạo bộ sưu tập mới!");
+                        showToast("Đã tạo bộ sưu tập mới thành công!", "success");
                       }
                     }}
                     className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase px-4 py-2 rounded-xl transition-all cursor-pointer"
@@ -495,10 +623,10 @@ export default function Profile() {
 
             {/* Avoid List (FR-14) */}
             <div>
-              <h3 className="font-bold text-base text-slate-900 mb-3 flex items-center gap-1.5"><AlertCircle size={18} className="text-red-500 animate-pulse" /> Danh sách Tránh xa (Avoid List)</h3>
+              <h3 className="font-bold text-base text-slate-900 mb-3 flex items-center gap-1.5"><AlertCircle size={18} className="text-red-500 animate-pulse" /> Danh sách địa điểm tránh xa</h3>
               <div className="bg-white rounded-2xl border border-slate-150 p-4 shadow-sm space-y-3">
                 {avoidList.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">Danh sách trống. Nhấn "Thêm vào Tránh xa" ở trang chi tiết POI để thêm.</p>
+                  <p className="text-xs text-slate-400 italic">Danh sách trống. Nhấn "Thêm vào Tránh xa" ở trang chi tiết địa điểm để thêm.</p>
                 ) : (
                   avoidList.map(pid => {
                     const p = places.find(placeItem => placeItem.id === pid);
@@ -515,7 +643,7 @@ export default function Profile() {
                         <button 
                           onClick={() => {
                             removeFromAvoidList(pid);
-                            alert(`Đã gỡ "${p.title}" khỏi danh sách tránh xa.`);
+                            showToast(`Đã gỡ "${p.title}" khỏi danh sách tránh xa.`, "info");
                           }}
                           className="p-1.5 bg-red-50 hover:bg-red-100 rounded-lg text-red-500 hover:text-red-600 transition-colors cursor-pointer"
                           title="Gỡ bỏ"
@@ -637,7 +765,7 @@ export default function Profile() {
                   { key: 'visualSearch', label: 'Visual Search (Gemini)' },
                   { key: 'sponsoredAds', label: 'Sponsored Ad Badges' },
                   { key: 'guidebook', label: 'Travel Guidebook' },
-                  { key: 'comparePois', label: 'POI Comparison' },
+                  { key: 'comparePois', label: 'So sánh địa điểm' },
                   { key: 'tasteCollections', label: 'Taste Collections' },
                   { key: 'avoidList', label: 'Avoid List Grayscale Map' },
                   { key: 'quickReport', label: '2-Tap Quick Report' },
@@ -685,7 +813,7 @@ export default function Profile() {
               <div>
                 <div className="flex justify-between items-center mb-3">
                   <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1">
-                    <Database size={14} /> GDPR & NĐ13 Auto-Purge Worker
+                    <Shield size={14} /> Dọn dẹp dữ liệu tự động (Bảo vệ dữ liệu & NĐ13)
                   </h4>
                   <span className="bg-purple-50 text-purple-600 text-[8.5px] font-black uppercase px-2 py-0.5 rounded border border-purple-100">
                     Tuân thủ
@@ -721,7 +849,7 @@ export default function Profile() {
                   <button
                     onClick={() => {
                       runPurgeWorker();
-                      alert("Đã kích hoạt Worker dọn dẹp dữ liệu tự động!");
+                      showToast("Đã dọn dẹp dữ liệu riêng tư thành công!", "success");
                     }}
                     className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-black uppercase rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
                   >
@@ -748,7 +876,7 @@ export default function Profile() {
               <div>
                 <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-2 flex items-center gap-1.5">
                   <Fingerprint size={14} className="text-rose-500" />
-                  Hệ thống Chống ve sầu thoát xác (POI Fingerprinting)
+                  Hệ thống Nhận diện gian lận địa điểm
                 </h4>
                 <p className="text-[10px] text-slate-500 font-semibold mb-4 leading-relaxed">
                   Ngăn chặn cơ sở vi phạm đổi tên để lách lệnh cấm bằng cách so khớp khoảng cách GPS, mã số thuế và cấu trúc thiết kế của quán.
@@ -756,7 +884,7 @@ export default function Profile() {
 
                 <div className="space-y-3 bg-slate-50 p-4 border border-slate-200 rounded-2xl">
                   <div>
-                    <label className="block text-[8.5px] font-bold text-slate-400 uppercase mb-1">Mô phỏng Đăng ký POI Mới:</label>
+                    <label className="block text-[8.5px] font-bold text-slate-400 uppercase mb-1">Mô phỏng Đăng ký Địa điểm Mới:</label>
                     <div className="grid grid-cols-2 gap-2 mb-3">
                       <div>
                         <span className="text-[8px] text-slate-400 block font-bold">Mã số Thuế (MST)</span>
@@ -793,9 +921,9 @@ export default function Profile() {
                       });
 
                       if (matchResult.matchedBanned) {
-                        alert(`⚠️ CẢNH BÁO GIAN LẬN THOÁT XÁC!\nTrùng khớp địa điểm đen: ${matchResult.matchedFingerprint?.reason}\nĐộ tương đồng: ${matchResult.confidence * 100}%`);
+                        showToast(`Cảnh báo: Trùng khớp địa điểm trong danh sách vi phạm (${matchResult.confidence * 100}%)`, "error");
                       } else {
-                        alert(`✓ POI Fingerprint An Toàn!\nĐộ tương đồng với danh sách đen: ${matchResult.confidence * 100}%. Cho phép tạo mới.`);
+                        showToast("Địa điểm an toàn, cho phép tiếp tục tạo mới!", "success");
                       }
                     }}
                     className="w-full py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black uppercase active:scale-95 transition-all cursor-pointer"
@@ -875,7 +1003,7 @@ export default function Profile() {
               <div onClick={() => navigate('/admin/poi')} className="bg-white px-5 py-4 rounded-[20px] flex justify-between items-center shadow-sm border border-slate-100 cursor-pointer hover:border-purple-100 transition-colors">
                 <div className="flex items-center gap-3 text-slate-700 font-medium text-sm">
                   <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center text-purple-600"><Database size={18}/></div>
-                  Quản trị POI & Dữ liệu (Admin)
+                  Quản trị Địa điểm & Dữ liệu (Admin)
                 </div>
                 <div className="text-slate-300 font-black px-2">&rsaquo;</div>
               </div>
@@ -883,41 +1011,97 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* Danger zone / RTBF */}
-        <div className="pt-4">
-          <div className="bg-red-50/50 border border-red-100 rounded-[24px] p-5">
-            <h4 className="text-sm font-bold text-red-800 mb-1">Khu vực nguy hiểm</h4>
-            <p className="text-[10px] text-red-600/80 font-medium mb-4 leading-relaxed">
-              Bạn có quyền yêu cầu xóa bỏ vĩnh viễn toàn bộ dữ liệu cá nhân (Right to be Forgotten) theo Khoản 1 Điều 16 Nghị định 13/2023/NĐ-CP. Hành động này không thể hoàn tác.
-            </p>
-            {!showDeleteConfirm ? (
-              <button 
-                onClick={() => setShowDeleteConfirm(true)}
-                className="px-4 py-2.5 bg-red-600 text-white font-bold text-xs rounded-xl hover:bg-red-700 transition-colors"
-              >
-                Yêu cầu xóa tài liệu & dữ liệu
-              </button>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-xs font-bold text-red-900">Xác nhận xóa sạch thông tin?</p>
-                <div className="flex gap-2">
-                  <button onClick={handleDeleteAccount} className="px-4 py-2 bg-red-700 text-white text-xs font-bold rounded-lg hover:bg-red-800">Có, xóa ngay</button>
-                  <button onClick={() => setShowDeleteConfirm(false)} className="px-4 py-2 bg-slate-200 text-slate-700 text-xs font-bold rounded-lg hover:bg-slate-300">Hủy</button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-        
+        {/* Logout button - Main Action */}
         <button 
           onClick={logout}
-          className="w-full mt-6 py-4 rounded-2xl text-slate-500 font-bold bg-white border border-slate-200 active:bg-slate-50 transition-colors text-sm cursor-pointer"
+          className="w-full mt-6 py-4 rounded-2xl text-slate-700 font-bold bg-white hover:bg-slate-50 border border-slate-200 shadow-sm active:scale-95 transition-all text-sm cursor-pointer flex items-center justify-center gap-2"
         >
-          Đăng xuất
+          Đăng xuất tài khoản
         </button>
+
+        {/* Danger Zone: Account Deletion (Spotify-style 7-day Soft Delete) - Chỉ hiển thị cho người dùng thường */}
+        {role === 'user' && (
+          <div className="pt-8 pb-4 text-center">
+            <button 
+              type="button"
+              onClick={() => setShowDeleteConfirm(true)}
+              className="text-xs text-rose-500 hover:text-rose-700 transition-colors inline-flex items-center gap-1.5 cursor-pointer font-semibold px-4 py-2 rounded-full bg-rose-50 hover:bg-rose-100 border border-rose-200 shadow-sm"
+            >
+              <Trash2 size={14} className="text-rose-500" />
+              Yêu cầu xóa tài khoản (Bảo lưu 7 ngày)
+            </button>
+          </div>
+        )}
       </div>
 
       {showAddPlace && <AddPlaceModal onClose={() => setShowAddPlace(false)} />}
+
+      {/* Modern Account Deletion Confirmation Modal (Spotify-style 7 days) */}
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setShowDeleteConfirm(false)}
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }} 
+              animate={{ scale: 1, opacity: 1, y: 0 }} 
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-white w-full max-w-md rounded-[32px] p-6 relative z-10 shadow-2xl text-center text-slate-800"
+            >
+              <div className="w-16 h-16 bg-rose-50 text-rose-600 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-rose-100 shadow-sm">
+                <Trash2 size={30} />
+              </div>
+
+              
+
+              <h3 className="font-black text-xl text-slate-900 mb-2">
+                Xác nhận yêu cầu xóa tài khoản
+              </h3>
+
+              <div className="text-left text-xs text-slate-600 bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2 mb-5">
+                <div className="flex items-start gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 flex-shrink-0" />
+                  <p><strong>Lưu tài khoản trong 1 tuần:</strong> Tài khoản của bạn sẽ được bảo lưu an toàn trong 7 ngày trước khi bị xóa hoàn toàn khỏi hệ thống.</p>
+                </div>
+                <div className="flex items-start gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 flex-shrink-0" />
+                  <p><strong>Không thể đăng nhập bình thường:</strong> Trong 1 tuần này, bạn sẽ bị đăng xuất và không thể sử dụng ứng dụng.</p>
+                </div>
+                <div className="flex items-start gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 mt-1.5 flex-shrink-0" />
+                  <p><strong>Quyền khôi phục tài khoản:</strong> Nếu bạn muốn khôi phục trong vòng 7 ngày, bạn chỉ cần đăng nhập lại và bấm <em>Khôi phục tài khoản</em> để tiếp tục sử dụng với đầy đủ dữ liệu cũ.</p>
+                </div>
+                <div className="flex items-start gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0" />
+                  <p><strong>Thông báo gửi về Gmail:</strong> Thông báo xác nhận và liên kết khôi phục sẽ được gửi về <span className="font-bold text-indigo-600">{user?.email}</span>.</p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleDeleteAccount}
+                  className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-bold text-xs rounded-2xl shadow-lg shadow-rose-600/20 transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Trash2 size={16} /> Xác nhận xóa & Nhận email xác nhận
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-2xl transition-colors cursor-pointer"
+                >
+                  Hủy, giữ lại tài khoản
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* VNPT eKYC L3 Simulation Modal (FR-21) */}
       <AnimatePresence>
@@ -935,7 +1119,7 @@ export default function Profile() {
               <div className="flex justify-between items-center mb-6 shrink-0">
                 <div className="flex items-center gap-2">
                   <Fingerprint className="text-indigo-600 animate-pulse" size={20} />
-                  <h3 className="font-black text-xl text-slate-900">VNPT eKYC L3 định danh</h3>
+                  <h3 className="font-black text-xl text-slate-900">Xác thực danh tính (eKYC)</h3>
                 </div>
                 {ekycStep !== 3 && (
                   <button onClick={() => setShowEkycModal(false)} className="p-2 bg-slate-100 rounded-full text-slate-500"><X size={18}/></button>
@@ -998,7 +1182,7 @@ export default function Profile() {
 
               {ekycStep === 2 && (
                 <div className="space-y-6">
-                  <h4 className="font-bold text-xs uppercase text-slate-400 tracking-wider text-left">Bước 2: Xác minh thực thể sống (Liveness Test)</h4>
+                  <h4 className="font-bold text-xs uppercase text-slate-400 tracking-wider text-left">Bước 2: Xác thực khuôn mặt (Liveness Test)</h4>
                   
                   <div className="w-40 h-40 rounded-full border-4 border-indigo-600 mx-auto relative overflow-hidden bg-slate-100 flex items-center justify-center shadow-lg">
                     <Video size={48} className="text-indigo-400 animate-pulse" />
@@ -1068,7 +1252,7 @@ export default function Profile() {
               className="bg-white w-full sm:w-[380px] rounded-t-[32px] sm:rounded-[32px] p-6 relative z-10 shadow-2xl text-left text-slate-800"
             >
               <div className="flex justify-between items-center mb-6">
-                <h3 className="font-black text-lg text-slate-900">Nộp đơn Kháng cáo POI</h3>
+                <h3 className="font-black text-lg text-slate-900">Nộp đơn Kháng cáo Địa điểm</h3>
                 {appealStep !== 4 && (
                   <button onClick={() => setShowAppealModal(false)} className="p-2 bg-slate-100 rounded-full text-slate-500"><X size={18}/></button>
                 )}

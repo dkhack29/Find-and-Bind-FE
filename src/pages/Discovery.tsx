@@ -82,7 +82,7 @@ export default function Discovery() {
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="h-full overflow-y-auto no-scrollbar pb-32 bg-white"
     >
-      <div className="relative pt-12 pb-6 px-6">
+      <div className="relative pt-[max(3rem,env(safe-area-inset-top,24px))] pb-6 px-5">
         <header className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-[32px] font-black text-slate-900 tracking-tight">Khám phá</h1>
@@ -121,12 +121,12 @@ export default function Discovery() {
             <div className="flex justify-between items-start mb-4">
               <span className="bg-indigo-600/50 border border-indigo-400/40 text-indigo-100 text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
                 <Sparkles size={12} className="text-yellow-400" />
-                Địa điểm nổi bật của Tuần (LOTW)
+                Điểm đến thịnh hành trong tuần
               </span>
               
               <div className="bg-emerald-500/15 border border-emerald-500/35 text-emerald-400 text-[9.5px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg flex items-center gap-1">
                 <ShieldCheck size={12} />
-                Đã kiểm toán chống gian lận (PR Audit)
+                Được cộng đồng đánh giá cao
               </div>
             </div>
 
@@ -148,12 +148,12 @@ export default function Discovery() {
 
             <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col md:flex-row gap-4 items-center justify-between">
               <div className="text-left shrink-0">
-                <div className="text-[10px] text-indigo-200 font-bold uppercase tracking-wider">Tăng trưởng lượt ghé thăm (WoW)</div>
+                <div className="text-[10px] text-indigo-200 font-bold uppercase tracking-wider">Xu hướng yêu thích tuần qua</div>
                 <div className="text-2xl font-black text-emerald-400 mt-1 flex items-center gap-1">
                   <TrendingUp size={22} />
                   +27.8%
                 </div>
-                <p className="text-[9px] text-slate-400 font-medium mt-1">Đạt chuẩn tuần tự đề xuất (Yêu cầu &ge;20%, Rating &ge;4.2)</p>
+                <p className="text-[9px] text-slate-400 font-medium mt-1">Dựa trên đánh giá và tương tác thực tế từ du khách</p>
               </div>
               
               <div className="w-full md:w-36 h-12 min-w-[120px] min-h-[48px]">
@@ -162,7 +162,7 @@ export default function Discovery() {
                     <defs>
                       <linearGradient id="colorVisits" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0.2}/>
                       </linearGradient>
                     </defs>
                     <Area type="monotone" dataKey="visits" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorVisits)" />
@@ -173,18 +173,18 @@ export default function Discovery() {
           </div>
         )}
 
-        {/* Phase 2: Rescue Picks (Giải cứu địa điểm khó khăn) (FR-30) */}
+        {/* Phase 2: Hidden Gems (Quán quen bản địa & Trải nghiệm ít người biết) */}
         {search === "" && rescuePicks && rescuePicks.filter(p => p.status === 'approved').length > 0 && (
           <div className="mb-8 text-left">
             <div className="flex justify-between items-center mb-4">
               <div>
                 <h3 className="font-black text-slate-900 text-xl tracking-tight flex items-center gap-2">
-                  <span className="text-rose-500 animate-pulse">❤️</span> Booth Giải cứu Địa điểm
+                  <span className="text-rose-500 animate-pulse">❤️</span> Quán quen bản địa (Hidden Gems)
                 </h3>
-                <p className="text-[11px] text-slate-500 font-medium mt-0.5">Địa điểm chất lượng bị khuất hoặc gặp khó khăn được bảo trợ</p>
+                <p className="text-[11px] text-slate-500 font-medium mt-0.5">Những điểm đến chất lượng mộc mạc và giàu bản sắc văn hóa địa phương</p>
               </div>
               <span className="bg-rose-50 text-rose-600 border border-rose-100 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-lg">
-                Slot: {rescuePicks.filter(p => p.status === 'approved').length}/20
+                Gợi ý: {rescuePicks.filter(p => p.status === 'approved').length} quán
               </span>
             </div>
 

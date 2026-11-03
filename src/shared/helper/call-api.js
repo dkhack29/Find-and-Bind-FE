@@ -153,14 +153,12 @@ client.interceptors.response.use(
           processQueue(refreshErr, null);
           isRefreshing = false;
           clearTokens();
-          redirectTo("/auth/login");
           return Promise.reject(refreshErr);
         }
       }
 
       isRefreshing = false;
       clearTokens();
-      redirectTo("/auth/login");
       return Promise.reject(error);
     }
 

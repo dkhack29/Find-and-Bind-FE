@@ -7,7 +7,7 @@ import { cn } from '../App';
 
 export default function AdminPoiConsole() {
   const navigate = useNavigate();
-  const { places, role, updatePlaceTag } = useAppContext();
+  const { places, role, updatePlaceTag, showToast } = useAppContext();
   const [editingPlaceId, setEditingPlaceId] = useState<number | null>(null);
   const [newTagVal, setNewTagVal] = useState('');
 
@@ -22,13 +22,13 @@ export default function AdminPoiConsole() {
           <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
           <h3 className="text-lg font-black text-slate-900 mb-2">Quyền truy cập bị từ chối</h3>
           <p className="text-xs text-slate-500 font-medium leading-relaxed mb-6">
-            Trang này chỉ dành cho Admin quản trị hệ thống dữ liệu POI. Vui lòng chuyển vai trò sang "Admin" bằng công cụ Role Switcher.
+            Trang này chỉ dành cho Admin quản trị hệ thống dữ liệu địa điểm. Vui lòng chuyển vai trò sang "Admin" bằng công cụ Role Switcher.
           </p>
           <button 
-            onClick={() => navigate('/profile')}
+            onClick={() => window.history.length > 1 ? navigate(-1) : navigate('/map')}
             className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl text-xs active:scale-95 transition-all"
           >
-            Đến trang Cá nhân
+            Quay lại màn hình trước
           </button>
         </div>
       </motion.div>
@@ -47,7 +47,7 @@ export default function AdminPoiConsole() {
       updatePlaceTag(placeId, newTagVal.trim());
       setEditingPlaceId(null);
       setNewTagVal('');
-      alert("Đã cập nhật danh mục phân loại POI thành công!");
+      showToast("Đã cập nhật danh mục phân loại POI thành công!", "success");
     }
   };
 
@@ -65,7 +65,7 @@ export default function AdminPoiConsole() {
           <ChevronLeft size={20} />
         </button>
         <div className="flex-1 text-left">
-          <h2 className="text-lg font-black text-slate-900 leading-none">Quản trị POI & Data</h2>
+          <h2 className="text-lg font-black text-slate-900 leading-none">Quản trị Địa điểm & Dữ liệu</h2>
           <p className="text-[10px] text-slate-400 font-semibold mt-1">Dành cho Admin - Quản lý phân loại & Cập nhật dữ liệu</p>
         </div>
         <div className="w-8 h-8 rounded-full bg-purple-50 border border-purple-100 text-purple-600 flex items-center justify-center"><Database size={16}/></div>
@@ -77,11 +77,11 @@ export default function AdminPoiConsole() {
           <h3 className="font-bold text-xs text-slate-400 uppercase tracking-wider mb-3">Tình trạng cơ sở dữ liệu</h3>
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col">
-              <span className="text-[10px] text-slate-500 font-bold">Tổng số POIs</span>
+              <span className="text-[10px] text-slate-500 font-bold">Tổng số Địa điểm</span>
               <span className="text-xl font-black text-slate-800">{places.length}</span>
             </div>
             <div className="flex flex-col">
-              <span className="text-[10px] text-slate-500 font-bold">POI bị lỗi thời (&gt;30d)</span>
+              <span className="text-[10px] text-slate-500 font-bold">Địa điểm cần rà soát (&gt;30d)</span>
               <span className="text-xl font-black text-rose-500">1</span>
             </div>
           </div>
@@ -89,7 +89,7 @@ export default function AdminPoiConsole() {
 
         {/* POI List */}
         <div>
-          <h3 className="font-bold text-base text-slate-900 mb-3 text-left">Danh sách Điểm dữ liệu (POI)</h3>
+          <h3 className="font-bold text-base text-slate-900 mb-3 text-left">Danh sách Địa điểm du lịch</h3>
           <div className="space-y-4">
             {places.map(p => {
               const stale = isStale(p.id);
@@ -161,7 +161,7 @@ export default function AdminPoiConsole() {
                       </button>
                       <button 
                         onClick={() => {
-                          alert(`Đã gửi yêu cầu khảo sát hiện trạng thực tế đối với địa điểm: ${p.title}. Đang kích hoạt điều động cộng tác viên.`);
+                          showToast(`Đã gửi yêu cầu khảo sát hiện trạng thực tế đối với địa điểm: ${p.title}.`, "info");
                         }}
                         className="flex-1 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold text-[10px] rounded-xl flex items-center justify-center gap-1 active:scale-95 transition-all"
                       >
